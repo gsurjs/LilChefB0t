@@ -48,7 +48,7 @@ const commands = {
     },
     
     '!commands': (channel, userstate) => {
-        return `Available commands: !hello, !dice, !time, !discord, !socials, !commands`;
+        return `Available commands: !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !uptime, !love, !discord, !socials`;
     },
     '!discord': (channel, userstate) => {
         const now = Date.now();
@@ -65,7 +65,112 @@ const commands = {
     '!8ball': (channel, userstate, args) => {
         if (args.length === 0) {
             return `🎱 @${userstate.username}, ask me a question! Usage: !8ball <question>`;
+        }
+        const responses = [
+            "It is certain", "Reply hazy, try again", "Don't count on it",
+            "It is decidedly so", "Ask again later", "My reply is no",
+            "Without a doubt", "Better not tell you now", "My sources say no",
+            "Yes definitely", "Cannot predict now", "Outlook not so good",
+            "You may rely on it", "Concentrate and ask again", "Very doubtful",
+            "As I see it, yes", "Most likely", "Outlook good", "Yes", "Signs point to yes"
+        ];
+        const response = responses[Math.floor(Math.random() * responses.length)];
+        return `🎱 @${userstate.username}: "${response}"`;
+    },
+    '!flip': (channel, userstate) => {
+        const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
+        const emoji = result === 'Heads' ? '🪙' : '🥇';
+        return `${emoji} @${userstate.username} flipped ${result}!`;
+    },
+    '!rng': (channel, userstate, args) => {
+        let min = 1, max = 100;
+        if (args.length === 1) {
+            max = parseInt(args[0]) || 100;
+        } else if (args.length === 2) {
+            min = parseInt(args[0]) || 1;
+            max = parseInt(args[1]) || 100;
+        }
+        if (min >= max) {
+            return `❌ @${userstate.username}, minimum must be less than maximum!`;
+        }
+        const result = Math.floor(Math.random() * (max - min + 1)) + min;
+        return `🎯 @${userstate.username}: Random number between ${min}-${max} is **${result}**`;
+    },
+    '!lurk': (channel, userstate) => {
+        const messages = [
+            `Thanks for lurking @${userstate.username}! Enjoy the stream! 👻`,
+            `Happy lurking @${userstate.username}! 🕵️`,
+            `@${userstate.username} is now in lurk mode! 🥷`,
+            `Lurk away @${userstate.username}! We appreciate you being here! 💜`
+        ];
+        return messages[Math.floor(Math.random() * messages.length)];
+    },
+    '!unlurk': (channel, userstate) => {
+        const messages = [
+            `Welcome back @${userstate.username}! 🎉`,
+            `@${userstate.username} has emerged from the shadows! 👋`,
+            `Look who's back! Hey @${userstate.username}! ✨`,
+            `@${userstate.username} decided to join the conversation! 🗣️`
+        ];
+        return messages[Math.floor(Math.random() * messages.length)];
+    },
+    '!hug': (channel, userstate, args) => {
+        if (args.length === 0) {
+            return `🫂 @${userstate.username} gives everyone a big hug!`;
+        }
+        const target = args[0].replace('@', '');
+        return `🫂 @${userstate.username} gives @${target} a warm hug!`;
+    },
+    '!quote': (channel, userstate) => {
+        const quotes = [
+            "The only way to do great work is to love what you do. - Steve Jobs",
+            "Innovation distinguishes between a leader and a follower. - Steve Jobs",
+            "Stay hungry, stay foolish. - Steve Jobs",
+            "The future belongs to those who believe in the beauty of their dreams. - Eleanor Roosevelt",
+            "It is during our darkest moments that we must focus to see the light. - Aristotle",
+            "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
+            "The only impossible journey is the one you never begin. - Tony Robbins",
+            "Life is what happens to you while you're busy making other plans. - John Lennon"
+        ];
+        const quote = quotes[Math.floor(Math.random() * quotes.length)];
+        return `💭 ${quote}`;
+    },
+    '!fact': (channel, userstate) => {
+        const facts = [
+            "Honey never spoils! Archaeologists have found edible honey in Egyptian tombs.",
+            "A group of flamingos is called a 'flamboyance'.",
+            "Octopuses have three hearts and blue blood.",
+            "Bananas are berries, but strawberries aren't.",
+            "A shrimp's heart is in its head.",
+            "Wombat poop is cube-shaped.",
+            "The shortest war in history lasted only 38-45 minutes.",
+            "Cleopatra lived closer in time to the moon landing than to the construction of the Great Pyramid."
+        ];
+        const fact = facts[Math.floor(Math.random() * facts.length)];
+        return `🧠 Fun Fact: ${fact}`;
+    },
+    '!love': (channel, userstate, args) => {
+        if (args.length === 0) {
+            const percentage = Math.floor(Math.random() * 101);
+            return `💕 @${userstate.username}, you are ${percentage}% loveable today!`;
+        }
+        const target = args[0].replace('@', '');
+        const percentage = Math.floor(Math.random() * 101);
+        return `💕 Love between @${userstate.username} and @${target}: ${percentage}%`;
+    },
+    '!uptime': (channel, userstate) => {
+        const uptimeSeconds = Math.floor(process.uptime());
+        const hours = Math.floor(uptimeSeconds / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const seconds = uptimeSeconds % 60;
+        return `🕐 Bot uptime: ${hours}h ${minutes}m ${seconds}s`;
+    },
+    '!echo': (channel, userstate, args) => {
+        const message = args.join(' ');
+        return message ? `📢 ${message}` : 'Usage: !echo <message>';
     }
+};
+
 };
 
 // Admin commands for authorized users only
