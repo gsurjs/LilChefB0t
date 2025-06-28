@@ -48,7 +48,7 @@ const commands = {
     },
     
     '!commands': (channel, userstate) => {
-        return `Available commands: !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !uptime, !love, !discord, !socials`;
+        return `Available commands: !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
     },
     '!discord': (channel, userstate) => {
         const now = Date.now();
@@ -158,13 +158,48 @@ const commands = {
         const percentage = Math.floor(Math.random() * 101);
         return `💕 Love between @${userstate.username} and @${target}: ${percentage}%`;
     },
-    '!uptime': (channel, userstate) => {
+    '!botuptime': (channel, userstate) => {
         const uptimeSeconds = Math.floor(process.uptime());
         const hours = Math.floor(uptimeSeconds / 3600);
         const minutes = Math.floor((uptimeSeconds % 3600) / 60);
         const seconds = uptimeSeconds % 60;
-        return `🕐 Bot uptime: ${hours}h ${minutes}m ${seconds}s`;
+        return `🧑🏻‍🍳 Bot has been awake for: ${hours}h ${minutes}m ${seconds}s`;
     },
+    '!vibes': (channel, userstate) => {
+        const vibeChecks = [
+            `✨ @${userstate.username} is radiating good vibes today! The energy is immaculate! 🌟`,
+            `🔥 @${userstate.username}'s vibe check: ELITE TIER! 💯`,
+            `🌈 @${userstate.username} is bringing rainbow energy to the chat! 🦄`,
+            `⚡ @${userstate.username}'s vibe frequency: MAXIMUM POWER! 🚀`,
+            `😎 @${userstate.username} is too cool for the vibe check! 🧊`,
+            `🎵 @${userstate.username} is vibing to life's soundtrack! 🎶`
+        ];
+        return vibeChecks[Math.floor(Math.random() * vibeChecks.length)];
+    },
+    '!energy': (channel, userstate) => {
+        const energyLevel = Math.floor(Math.random() * 101);
+        let emoji, description;
+        
+        if (energyLevel >= 90) {
+            emoji = "⚡🔥⚡";
+            description = "MAXIMUM OVERDRIVE!";
+        } else if (energyLevel >= 70) {
+            emoji = "🚀";
+            description = "High energy rocket mode!";
+        } else if (energyLevel >= 50) {
+            emoji = "✨";
+            description = "Steady positive energy!";
+        } else if (energyLevel >= 30) {
+            emoji = "☕";
+            description = "Could use some coffee...";
+        } else {
+            emoji = "😴";
+            description = "Low power mode activated";
+        }
+        
+        return `${emoji} @${userstate.username}'s energy level: ${energyLevel}% - ${description}`;
+    },
+
     '!echo': (channel, userstate, args) => {
         const message = args.join(' ');
         return message ? `📢 ${message}` : 'Usage: !echo <message>';
