@@ -27,9 +27,14 @@ const isAuthorizedAdmin = (userstate) => {
 // Commands that work without streamer account access
 const commands = {
     '!hello': (channel, userstate) => {
-        return `Hello @${userstate.username}! Welcome to the stream! 👋`;
+        const greetings = [
+            `Hello @${userstate.username}! Welcome to the stream! 👋`,
+            `Hey there @${userstate.username}! Glad you're here! 🎉`,
+            `Welcome @${userstate.username}! Hope you enjoy the stream! ✨`,
+            `@${userstate.username} just entered the chat! What's good? 🔥`
+        ];
+        return greetings[Math.floor(Math.random() * greetings.length)];
     },
-    
     '!dice': (channel, userstate) => {
         const roll = Math.floor(Math.random() * 6) + 1;
         return `🎲 @${userstate.username} rolled a ${roll}!`;
@@ -57,14 +62,9 @@ const commands = {
         commandCooldowns.set('discord', now);
         return `🎮 Join our Discord community: ${process.env.DISCORD_INVITE} - See you there @${userstate.username}! 🧑🏻‍🍳`;
     },
-    '!shutdown': (channel, userstate) => {
-        if (userstate.username === 'leg_stiltz' || userstate.username === 'roguedubz' || userstate.username === 'lilchefb0t') {
-            client.say(channel, 'Bot shutting down for maintenance...');
-            setTimeout(() => process.exit(0), 1000);
-            return null;
-        } else {
-            return `❌ @${userstate.username}, you don't have permission to use this command.`;
-        }
+    '!8ball': (channel, userstate, args) => {
+        if (args.length === 0) {
+            return `🎱 @${userstate.username}, ask me a question! Usage: !8ball <question>`;
     }
 };
 
