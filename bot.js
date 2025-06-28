@@ -171,8 +171,6 @@ const commands = {
     }
 };
 
-};
-
 // Admin commands for authorized users only
 const adminCommands = {
     '!shutdown': (channel, userstate) => {
