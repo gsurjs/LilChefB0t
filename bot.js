@@ -40,7 +40,7 @@ const startAutoPosting = (channel) => {
     }
     
     isAutoPostingEnabled = true;
-    console.log('🔄 Auto-posting socials enabled (every 20 minutes)');
+    console.log('🔄 Auto-posting socials enabled (every 10 minutes)');
     
     autoPostInterval = setInterval(() => {
         if (isAutoPostingEnabled) {
@@ -48,7 +48,7 @@ const startAutoPosting = (channel) => {
             client.say(channel, socialsMessage);
             console.log('📢 Auto-posted socials message');
         }
-    }, 20 * 60 * 1000); // 20 minutes in milliseconds
+    }, 10 * 60 * 1000); // 10 minutes in milliseconds
 };
 
 // Function to stop auto-posting
