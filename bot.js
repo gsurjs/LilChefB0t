@@ -6,6 +6,10 @@ const AUTHORIZED_USERS = process.env.AUTHORIZED_USERS
     ? process.env.AUTHORIZED_USERS.split(',').map(user => user.trim().toLowerCase())
     : [];
 
+// Auto-posting variables
+let autoPostInterval;
+let isAutoPostingEnabled = false;
+
 const config = {
     identity: {
         username: process.env.BOT_USERNAME,
@@ -22,6 +26,39 @@ const commandCooldowns = new Map();
 // Helper function to check if user is authorized admin
 const isAuthorizedAdmin = (userstate) => {
     return AUTHORIZED_USERS.includes(userstate.username.toLowerCase());
+};
+
+// Function to check if user is a moderator
+const isModerator = (userstate) => {
+    return userstate.mod || userstate.badges?.broadcaster || isAuthorizedAdmin(userstate);
+};
+
+// Function to start auto-posting socials
+const startAutoPosting = (channel) => {
+    if (autoPostInterval) {
+        clearInterval(autoPostInterval);
+    }
+    
+    isAutoPostingEnabled = true;
+    console.log('🔄 Auto-posting socials enabled (every 20 minutes)');
+    
+    autoPostInterval = setInterval(() => {
+        if (isAutoPostingEnabled) {
+            const socialsMessage = `🔗 Follow us! Discord: ${process.env.DISCORD_INVITE} | Twitter: ${process.env.TWITTER_HANDLE} | Follow the stream! 🎯 | Youtube: ${process.env.YOUTUBE_CHANNEL}`;
+            client.say(channel, socialsMessage);
+            console.log('📢 Auto-posted socials message');
+        }
+    }, 20 * 60 * 1000); // 20 minutes in milliseconds
+};
+
+// Function to stop auto-posting
+const stopAutoPosting = () => {
+    if (autoPostInterval) {
+        clearInterval(autoPostInterval);
+        autoPostInterval = null;
+    }
+    isAutoPostingEnabled = false;
+    console.log('⏹️ Auto-posting socials disabled');
 };
 
 // Commands that work without streamer account access
@@ -222,8 +259,29 @@ const adminCommands = {
         return null;
     },
     
+    '!autopost': (channel, userstate, args) => {
+        if (args.length === 0) {
+            return `🔧 Auto-posting is currently ${isAutoPostingEnabled ? 'enabled' : 'disabled'}. Use !autopost on/off`;
+        }
+        
+        const action = args[0].toLowerCase();
+        if (action === 'on' || action === 'enable') {
+            startAutoPosting(channel);
+            return `✅ Auto-posting socials enabled! Will post every 20 minutes.`;
+        } else if (action === 'off' || action === 'disable') {
+            stopAutoPosting();
+            return `❌ Auto-posting socials disabled.`;
+        } else {
+            return `❓ Usage: !autopost on/off`;
+        }
+    },
+    
+    '!autopost-status': (channel, userstate) => {
+        return `📊 Auto-posting status: ${isAutoPostingEnabled ? '✅ Enabled (every 20 minutes)' : '❌ Disabled'}`;
+    },
+    
     '!adminhelp': (channel, userstate) => {
-        return `🔧 Admin commands: !shutdown, !restart, !adminhelp`;
+        return `🔧 Admin commands: !shutdown, !restart, !autopost, !autopost-status, !adminhelp`;
     }
 };
 
@@ -311,6 +369,9 @@ client.on('connected', (address, port) => {
     console.log('💬 Bot is ready for commands!');
     console.log('Type !commands in chat to see available commands');
     console.log('='.repeat(50));
+    
+    // Auto-start the socials posting
+    startAutoPosting(process.env.CHANNEL_NAME);
 });
 
 client.on('disconnected', (reason) => {
@@ -359,12 +420,14 @@ client.connect().catch((error) => {
 // Graceful shutdown handling
 process.on('SIGINT', () => {
     console.log('\n🛑 Received SIGINT, shutting down gracefully...');
+    stopAutoPosting();
     client.disconnect();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
+    stopAutoPosting();
     client.disconnect();
     process.exit(0);
 });
