@@ -108,7 +108,7 @@ const askAI = async (question, username) => {
             
             return `👨🏻‍🍳 @${username}: ${aiResponse}`;
         } else {
-            return `❌ @${username}, LilChef is having trouble right now. Try again later!`;
+            return `❌ @${username}, LilChef is having trouble right now. Try cooking again later!`;
         }
     } catch (error) {
         console.error('AI Error:', error);
