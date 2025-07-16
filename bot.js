@@ -140,7 +140,7 @@ const commands = {
     },
     
     '!commands': (channel, userstate) => {
-        return `Available commands: !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
+        return `Available commands: !chefbot, !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
     },
     '!discord': (channel, userstate) => {
         const now = Date.now();
