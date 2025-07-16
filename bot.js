@@ -10,6 +10,11 @@ const AUTHORIZED_USERS = process.env.AUTHORIZED_USERS
 let autoPostInterval;
 let isAutoPostingEnabled = false;
 
+// AI Chat variables
+let aiEnabled = false;
+const aiCooldowns = new Map();
+const AI_COOLDOWN_TIME = 10000; // 10 seconds between AI requests per user
+
 const config = {
     identity: {
         username: process.env.BOT_USERNAME,
@@ -59,6 +64,56 @@ const stopAutoPosting = () => {
     }
     isAutoPostingEnabled = false;
     console.log('⏹️ Auto-posting socials disabled');
+};
+
+// AI Chat function using Groq API
+const askAI = async (question, username) => {
+    if (!process.env.GROQ_API_KEY) {
+        return "❌ AI not configured. Missing API key.";
+    }
+
+    try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'llama-3.1-8b-instant', // Fast and free model
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a helpful Twitch chat assistant named Lil Chef. Keep responses under 200 characters and friendly. You're helping ${process.env.CHANNEL_NAME}'s community. Be concise, helpful, and engaging.`
+                    },
+                    {
+                        role: 'user',
+                        content: question
+                    }
+                ],
+                max_tokens: 150,
+                temperature: 0.7
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            let aiResponse = data.choices[0].message.content.trim();
+            
+            // Truncate if too long for Twitch (500 char limit)
+            if (aiResponse.length > 450) {
+                aiResponse = aiResponse.substring(0, 447) + '...';
+            }
+            
+            return `👨🏻‍🍳 @${username}: ${aiResponse}`;
+        } else {
+            return `❌ @${username}, LilChef is having trouble right now. Try again later!`;
+        }
+    } catch (error) {
+        console.error('AI Error:', error);
+        return `❌ @${username}, LilChef failed to cook. Try again later!`;
+    }
 };
 
 // Commands that work without streamer account access
@@ -240,6 +295,38 @@ const commands = {
     '!echo': (channel, userstate, args) => {
         const message = args.join(' ');
         return message ? `📢 ${message}` : 'Usage: !echo <message>';
+    },
+    // AI Chat command
+    '!chefbot': async (channel, userstate, args) => {
+        if (!aiEnabled) {
+            return `🤖 Chef AI chat is currently disabled. Admins can enable it with !ai-toggle`;
+        }
+
+        if (args.length === 0) {
+            return `👨🏻‍🍳 @${userstate.username}, ask me something, LET ME COOK! Usage: !chefbot <your question>`;
+        }
+
+        // Check cooldown
+        const now = Date.now();
+        const lastUsed = aiCooldowns.get(userstate.username) || 0;
+        const timeLeft = AI_COOLDOWN_TIME - (now - lastUsed);
+        
+        if (timeLeft > 0) {
+            return `⏱️ @${userstate.username}, please wait ${Math.ceil(timeLeft / 1000)} seconds before asking again.`;
+        }
+
+        // Set cooldown
+        aiCooldowns.set(userstate.username, now);
+
+        const question = args.join(' ');
+        console.log(`AI request from ${userstate.username}: ${question}`);
+        
+        try {
+            return await askAI(question, userstate.username);
+        } catch (error) {
+            console.error('AI command error:', error);
+            return `❌ @${userstate.username}, Chef AI is having trouble. Try cooking again later!`;
+        }
     }
 };
 
@@ -278,6 +365,16 @@ const adminCommands = {
     
     '!autopost-status': (channel, userstate) => {
         return `📊 Auto-posting status: ${isAutoPostingEnabled ? '✅ Enabled (every 10 minutes)' : '❌ Disabled'}`;
+    },
+    '!ai-toggle': (channel, userstate) => {
+        aiEnabled = !aiEnabled;
+        console.log(`AI chat ${aiEnabled ? 'enabled' : 'disabled'} by: ${userstate.username}`);
+        return `👨🏻‍🍳 Chef AI chat ${aiEnabled ? 'enabled' : 'disabled'}! ${aiEnabled ? 'Chatters can now use !chefbot <question>' : 'Chef AI commands are now disabled and no longer cooking.'}`;
+    },
+
+    '!ai-status': (channel, userstate) => {
+        const apiStatus = process.env.GROQ_API_KEY ? '✅ API key configured' : '❌ No API key';
+        return `👨🏻‍🍳 Chef AI Status: ${aiEnabled ? 'Enabled' : 'Disabled'} | ${apiStatus}`;
     },
     
     '!adminhelp': (channel, userstate) => {
@@ -365,6 +462,7 @@ client.on('connected', (address, port) => {
     console.log(`🔗 Channel URL: https://twitch.tv/${process.env.CHANNEL_NAME}`);
     console.log(`👥 Authorized Admins: ${AUTHORIZED_USERS.join(', ')}`);
     console.log(`🎮 Discord: ${process.env.DISCORD_INVITE || 'Not set'}`);
+    console.log(`🤖 AI Chat: ${process.env.GROQ_API_KEY ? 'Configured' : 'Not configured'} (${aiEnabled ? 'Enabled' : 'Disabled'})`);
     console.log('='.repeat(50));
     console.log('💬 Bot is ready for commands!');
     console.log('Type !commands in chat to see available commands');
@@ -406,6 +504,10 @@ if (missingVars.length > 0) {
 
 if (AUTHORIZED_USERS.length === 0) {
     console.warn('⚠️  No authorized admin users set. Admin commands will be disabled.');
+}
+
+if (!process.env.GROQ_API_KEY) {
+    console.warn('⚠️  GROQ_API_KEY not set. AI features will be disabled.');
 }
 
 console.log('✅ Environment variables validated');
