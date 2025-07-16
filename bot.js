@@ -11,7 +11,7 @@ let autoPostInterval;
 let isAutoPostingEnabled = false;
 
 // AI Chat variables
-let aiEnabled = false;
+let aiEnabled = true; //enabled by default
 const aiCooldowns = new Map();
 const AI_COOLDOWN_TIME = 10000; // 10 seconds between AI requests per user
 
