@@ -267,7 +267,7 @@ const adminCommands = {
         const action = args[0].toLowerCase();
         if (action === 'on' || action === 'enable') {
             startAutoPosting(channel);
-            return `✅ Auto-posting socials enabled! Will post every 20 minutes.`;
+            return `✅ Auto-posting socials enabled! Will post every 10 minutes.`;
         } else if (action === 'off' || action === 'disable') {
             stopAutoPosting();
             return `❌ Auto-posting socials disabled.`;
@@ -277,7 +277,7 @@ const adminCommands = {
     },
     
     '!autopost-status': (channel, userstate) => {
-        return `📊 Auto-posting status: ${isAutoPostingEnabled ? '✅ Enabled (every 20 minutes)' : '❌ Disabled'}`;
+        return `📊 Auto-posting status: ${isAutoPostingEnabled ? '✅ Enabled (every 10 minutes)' : '❌ Disabled'}`;
     },
     
     '!adminhelp': (channel, userstate) => {
@@ -370,8 +370,8 @@ client.on('connected', (address, port) => {
     console.log('Type !commands in chat to see available commands');
     console.log('='.repeat(50));
     
-    // Auto-start the socials posting
-    startAutoPosting(process.env.CHANNEL_NAME);
+    // Auto-posting is disabled by default - use !autopost on to enable
+    console.log('📢 Auto-posting socials is DISABLED by default. Use !autopost on to enable.');
 });
 
 client.on('disconnected', (reason) => {
