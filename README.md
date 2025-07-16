@@ -4,6 +4,11 @@ A unique, personality-driven Twitch chat bot designed to complement StreamElemen
 
 ## ✨ Features
 
+### 🤖 AI Chat Integration
+- **Interactive AI Assistant** - Ask questions and get intelligent responses
+- **Smart Cooldown System** - Prevents spam while maintaining responsiveness
+- **Admin Controls** - Enable/disable AI features as needed
+
 ### 🎮 Interactive Commands
 - **Magic 8-Ball** - Ask questions and get mystical answers
 - **Custom Dice** - Roll dice with customizable sides (1-100)
@@ -33,6 +38,7 @@ A unique, personality-driven Twitch chat bot designed to complement StreamElemen
 
 | Command | Description | Usage |
 |---------|-------------|--------|
+| `!chefbot` | Ask the AI assistant | `!chefbot <question>` |
 | `!hello` | Random welcome greeting | `!hello` |
 | `!dice` | Roll dice (default 6-sided) | `!dice [sides]` |
 | `!8ball` | Magic 8-ball responses | `!8ball <question>` |
