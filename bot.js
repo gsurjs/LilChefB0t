@@ -80,7 +80,7 @@ const askAI = async (question, username) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'llama-3.1-8b-instant', // Fast and free model
+                model: 'llama-3.1-70b-versatile', // Fast and free model
                 messages: [
                     {
                         role: 'system',
@@ -382,7 +382,7 @@ const adminCommands = {
     }
 };
 
-// Mod-only commands (since your bot will be a mod)
+// Mod-only commands
 const modCommands = {
     '!timeout': (channel, userstate, args) => {
         if (args.length > 0) {
@@ -392,6 +392,33 @@ const modCommands = {
     
     '!clear': (channel, userstate) => {
         return '/clear';
+    },
+    '!ban': (channel, userstate, args) => {
+        if (args.length === 0) {
+            return `❌ @${userstate.username}, usage: !ban <username> [reason]`;
+        }
+        
+        const targetUser = args[0].replace('@', ''); // Remove @ if present
+        const reason = args.slice(1).join(' ') || 'No reason provided';
+        
+        // Log the ban action
+        console.log(`🔨 Ban executed by ${userstate.username} on ${targetUser}. Reason: ${reason}`);
+        
+        // Return the Twitch ban command
+        return `/ban ${targetUser} ${reason}`;
+    },
+    //unban command too
+    '!unban': (channel, userstate, args) => {
+        if (args.length === 0) {
+            return `❌ @${userstate.username}, usage: !unban <username>`;
+        }
+        
+        const targetUser = args[0].replace('@', '');
+        
+        // Log the unban action
+        console.log(`🔓 Unban executed by ${userstate.username} on ${targetUser}`);
+        
+        return `/unban ${targetUser}`;
     }
 };
 
