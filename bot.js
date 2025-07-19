@@ -140,7 +140,7 @@ const commands = {
     },
     
     '!commands': (channel, userstate) => {
-        return `Available commands: !chefbot, !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
+        return `Available commands: !chefbot, !rules, !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
     },
     '!discord': (channel, userstate) => {
         const now = Date.now();
@@ -291,7 +291,9 @@ const commands = {
         
         return `${emoji} @${userstate.username}'s energy level: ${energyLevel}% - ${description}`;
     },
-
+    '!rules': (channel, userstate) => {
+        return `📋 Stream Rules: • Keep language clean • No politics/current events discussion • Backseating permitted as long as it is reasonable 🎯`;
+    },
     '!echo': (channel, userstate, args) => {
         const message = args.join(' ');
         return message ? `📢 ${message}` : 'Usage: !echo <message>';
