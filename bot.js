@@ -138,9 +138,12 @@ const commands = {
     '!socials': (channel, userstate) => {
         return `🔗 Follow us! Discord: ${process.env.DISCORD_INVITE} | Twitter: ${process.env.TWITTER_HANDLE} | Follow the stream! 🎯 | Youtube: ${process.env.YOUTUBE_CHANNEL}`;
     },
+    '!prime': (channel, userstate) => {
+        return `🎮 Amazon Prime members get a FREE Twitch subscription every month! Don't forget to claim yours and maybe support your favorite 👨🏻‍🍳? (We'd be honored 🙏) 💜 Manage your Prime Gaming benefits: https://gaming.amazon.com/links/twitch/manage`;
+    },
     
     '!commands': (channel, userstate) => {
-        return `Available commands: !chefbot, !rules, !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials`;
+        return `Available commands: !chefbot, !rules, !hello, !dice, !8ball, !flip, !rng, !lurk, !unlurk, !hug, !quote, !fact, !time, !botuptime, !love, !vibes, !energy, !discord, !socials, !prime`;
     },
     '!discord': (channel, userstate) => {
         const now = Date.now();
