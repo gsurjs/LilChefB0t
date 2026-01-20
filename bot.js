@@ -80,7 +80,7 @@ const askAI = async (question, username) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'llama-3.1-8b-instant', // Fast and free model
+                model: 'openai/gpt-oss-120b', // Fast and free model
                 messages: [
                     {
                         role: 'system',
