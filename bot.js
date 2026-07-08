@@ -73,14 +73,15 @@ const askAI = async (question, username) => {
     }
 
     try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'openai/gpt-oss-120b', // Fast and free model
+                model: 'gemini-3-flash-preview',
+                reasoning_effort: 'low',   // it's a thinking model; keep it snappy
                 messages: [
                     {
                         role: 'system',
@@ -91,7 +92,7 @@ const askAI = async (question, username) => {
                         content: question
                     }
                 ],
-                max_tokens: 150,
+                max_tokens: 400,
                 temperature: 0.7
             })
         });
