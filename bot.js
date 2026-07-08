@@ -66,17 +66,17 @@ const stopAutoPosting = () => {
     console.log('⏹️ Auto-posting socials disabled');
 };
 
-// AI Chat function using Groq API
+// AI Chat function using Gemini API (OpenAI-compatible endpoint)
 const askAI = async (question, username) => {
-    if (!process.env.GROQ_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
         return "❌ AI not configured. Missing API key.";
     }
 
     try {
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -379,7 +379,7 @@ const adminCommands = {
     },
 
     '!ai-status': (channel, userstate) => {
-        const apiStatus = process.env.GROQ_API_KEY ? '✅ API key configured' : '❌ No API key';
+        const apiStatus = process.env.GEMINI_API_KEY ? '✅ API key configured' : '❌ No API key';
         return `👨🏻‍🍳 Chef AI Status: ${aiEnabled ? 'Enabled' : 'Disabled'} | ${apiStatus}`;
     },
     
@@ -495,7 +495,7 @@ client.on('connected', (address, port) => {
     console.log(`🔗 Channel URL: https://twitch.tv/${process.env.CHANNEL_NAME}`);
     console.log(`👥 Authorized Admins: ${AUTHORIZED_USERS.join(', ')}`);
     console.log(`🎮 Discord: ${process.env.DISCORD_INVITE || 'Not set'}`);
-    console.log(`🤖 AI Chat: ${process.env.GROQ_API_KEY ? 'Configured' : 'Not configured'} (${aiEnabled ? 'Enabled' : 'Disabled'})`);
+    console.log(`🤖 AI Chat: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured'} (${aiEnabled ? 'Enabled' : 'Disabled'})`);
     console.log('='.repeat(50));
     console.log('💬 Bot is ready for commands!');
     console.log('Type !commands in chat to see available commands');
@@ -539,8 +539,8 @@ if (AUTHORIZED_USERS.length === 0) {
     console.warn('⚠️  No authorized admin users set. Admin commands will be disabled.');
 }
 
-if (!process.env.GROQ_API_KEY) {
-    console.warn('⚠️  GROQ_API_KEY not set. AI features will be disabled.');
+if (!process.env.GEMINI_API_KEY) {
+    console.warn('⚠️  GEMINI_API_KEY not set. AI features will be disabled.');
 }
 
 console.log('✅ Environment variables validated');
