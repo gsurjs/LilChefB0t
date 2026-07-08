@@ -66,22 +66,48 @@ const stopAutoPosting = () => {
     console.log('⏹️ Auto-posting socials disabled');
 };
 
-// AI Chat function using Gemini API (OpenAI-compatible endpoint)
+// AI provider configuration — set AI_PROVIDER in env to 'groq', 'gemini', or 'claude'
+// All three expose OpenAI-compatible /chat/completions, so the same code works for each.
+const AI_PROVIDERS = {
+    groq: {
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        keyEnv: 'GROQ_API_KEY',
+        // Compound = production system with built-in web search (current-events answers).
+        // Set AI_MODEL=openai/gpt-oss-120b in env to revert to the plain flagship model.
+        model: 'groq/compound'
+    },
+    gemini: {
+        url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        keyEnv: 'GEMINI_API_KEY',
+        model: 'gemini-3-flash-preview',
+        extra: { reasoning_effort: 'low' } // thinking model; keep it snappy
+    },
+    claude: {
+        url: 'https://api.anthropic.com/v1/chat/completions',
+        keyEnv: 'ANTHROPIC_API_KEY',
+        model: 'claude-haiku-4-5'
+    }
+};
+const aiProvider = AI_PROVIDERS[(process.env.AI_PROVIDER || 'groq').toLowerCase()] || AI_PROVIDERS.groq;
+const aiModel = process.env.AI_MODEL || aiProvider.model; // optional per-provider model override
+const getAIKey = () => process.env[aiProvider.keyEnv];
+
+// AI Chat function (provider-agnostic, OpenAI-compatible endpoints)
 const askAI = async (question, username) => {
-    if (!process.env.GEMINI_API_KEY) {
+    if (!getAIKey()) {
         return "❌ AI not configured. Missing API key.";
     }
 
     try {
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        const response = await fetch(aiProvider.url, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
+                'Authorization': `Bearer ${getAIKey()}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'gemini-3-flash-preview',
-                reasoning_effort: 'low',   // it's a thinking model; keep it snappy
+                model: aiModel,
+                ...(aiProvider.extra || {}),
                 messages: [
                     {
                         role: 'system',
@@ -98,7 +124,11 @@ const askAI = async (question, username) => {
         });
 
         const data = await response.json();
-        
+
+        if (!response.ok) {
+            console.error(`AI API error ${response.status}:`, JSON.stringify(data));
+        }
+
         if (data.choices && data.choices[0] && data.choices[0].message) {
             let aiResponse = data.choices[0].message.content.trim();
             
@@ -109,6 +139,9 @@ const askAI = async (question, username) => {
             
             return `👨🏻‍🍳 @${username}: ${aiResponse}`;
         } else {
+            if (response.ok) {
+                console.error('AI API returned OK but unexpected shape:', JSON.stringify(data).substring(0, 500));
+            }
             return `❌ @${username}, LilChef is having trouble right now. Try cooking again later!`;
         }
     } catch (error) {
@@ -379,7 +412,7 @@ const adminCommands = {
     },
 
     '!ai-status': (channel, userstate) => {
-        const apiStatus = process.env.GEMINI_API_KEY ? '✅ API key configured' : '❌ No API key';
+        const apiStatus = getAIKey() ? '✅ API key configured' : '❌ No API key';
         return `👨🏻‍🍳 Chef AI Status: ${aiEnabled ? 'Enabled' : 'Disabled'} | ${apiStatus}`;
     },
     
@@ -495,7 +528,7 @@ client.on('connected', (address, port) => {
     console.log(`🔗 Channel URL: https://twitch.tv/${process.env.CHANNEL_NAME}`);
     console.log(`👥 Authorized Admins: ${AUTHORIZED_USERS.join(', ')}`);
     console.log(`🎮 Discord: ${process.env.DISCORD_INVITE || 'Not set'}`);
-    console.log(`🤖 AI Chat: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured'} (${aiEnabled ? 'Enabled' : 'Disabled'})`);
+    console.log(`🤖 AI Chat: ${getAIKey() ? `${(process.env.AI_PROVIDER || 'groq')} / ${aiModel}` : 'Not configured'} (${aiEnabled ? 'Enabled' : 'Disabled'})`);
     console.log('='.repeat(50));
     console.log('💬 Bot is ready for commands!');
     console.log('Type !commands in chat to see available commands');
@@ -539,8 +572,8 @@ if (AUTHORIZED_USERS.length === 0) {
     console.warn('⚠️  No authorized admin users set. Admin commands will be disabled.');
 }
 
-if (!process.env.GEMINI_API_KEY) {
-    console.warn('⚠️  GEMINI_API_KEY not set. AI features will be disabled.');
+if (!getAIKey()) {
+    console.warn(`⚠️  ${aiProvider.keyEnv} not set. AI features will be disabled.`);
 }
 
 console.log('✅ Environment variables validated');
