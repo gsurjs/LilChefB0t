@@ -545,11 +545,31 @@ if (!process.env.GEMINI_API_KEY) {
 
 console.log('✅ Environment variables validated');
 
+// Preflight: verify outbound HTTPS to Twitch + token validity before opening chat socket
+const preflight = async () => {
+    try {
+        const token = (process.env.OAUTH_TOKEN || '').replace(/^oauth:/, '');
+        const res = await fetch('https://id.twitch.tv/oauth2/validate', {
+            headers: { 'Authorization': `OAuth ${token}` }
+        });
+        if (res.ok) {
+            const info = await res.json();
+            console.log(`✅ Preflight OK — HTTPS to Twitch works, token valid for "${info.login}"`);
+        } else {
+            console.error(`⚠️ Preflight: reached Twitch, but token validation returned HTTP ${res.status} — token may be expired/revoked, regenerate it`);
+        }
+    } catch (err) {
+        console.error(`❌ Preflight: cannot reach Twitch over HTTPS at all — host network/egress issue: ${err.message}`);
+    }
+};
+
 // Connect to Twitch
-console.log('🔌 Connecting to Twitch...');
-client.connect().catch((error) => {
-    console.error('❌ Failed to connect to Twitch:', error);
-    process.exit(1);
+preflight().finally(() => {
+    console.log('🔌 Connecting to Twitch...');
+    client.connect().catch((error) => {
+        console.error('❌ Failed to connect to Twitch:', error);
+        process.exit(1);
+    });
 });
 
 // Graceful shutdown handling
