@@ -62,10 +62,38 @@ export class TwitchApi {
      *   bot or the broadcaster -- a moderator's token is a perfectly good third
      *   option, and sometimes the only one available.
      */
-    constructor(authProvider, { knownUserIds = [] } = {}) {
+    constructor(authProvider, { knownUserIds = [], apiClient } = {}) {
         this.#authProvider = authProvider;
-        this.#api = new ApiClient({ authProvider });
+        this.#api = apiClient ?? new ApiClient({ authProvider });
         this.#knownUserIds = knownUserIds;
+    }
+
+    /**
+     * A user whose token can authorize a plain Helix read.
+     *
+     * Twurple sends any call made outside a user context with an *app* access
+     * token, and minting one needs a client secret -- which a Public app does
+     * not have. So even scope-free reads like "look up this username" have to
+     * name a user. Preference mirrors findHolder(): bot, broadcaster, then any
+     * other authorized account.
+     */
+    get contextUserId() {
+        for (const userId of [this.#botId, this.#broadcasterId, ...this.#knownUserIds]) {
+            if (userId && this.knows(userId)) return userId;
+        }
+        return null;
+    }
+
+    /** Run a Helix call under a user token rather than an app token. */
+    async #withUser(runner) {
+        const userId = this.contextUserId;
+        if (!userId) {
+            throw new Error(
+                'No Twitch user token is available for API calls. Run `npm run auth`, ' +
+                    'or set one of BOT_/BROADCASTER_/MODERATOR_REFRESH_TOKEN.'
+            );
+        }
+        return this.#api.asUser(userId, runner);
     }
 
     get client() {
@@ -81,10 +109,12 @@ export class TwitchApi {
     }
 
     async init() {
-        const [broadcaster, bot] = await Promise.all([
-            this.#api.users.getUserByName(config.twitch.channelName),
-            this.#api.users.getUserByName(config.twitch.botUsername)
-        ]);
+        const [broadcaster, bot] = await this.#withUser((ctx) =>
+            Promise.all([
+                ctx.users.getUserByName(config.twitch.channelName),
+                ctx.users.getUserByName(config.twitch.botUsername)
+            ])
+        );
 
         if (!broadcaster) throw new Error(`Twitch has no user named "${config.twitch.channelName}" (CHANNEL_NAME)`);
         if (!bot) throw new Error(`Twitch has no user named "${config.twitch.botUsername}" (BOT_USERNAME)`);
@@ -151,7 +181,7 @@ export class TwitchApi {
 
     async getStreamStatus() {
         return this.#streamCache.get(async () => {
-            const stream = await this.#api.streams.getStreamByUserId(this.#broadcasterId);
+            const stream = await this.#withUser((ctx) => ctx.streams.getStreamByUserId(this.#broadcasterId));
             if (!stream) return { live: false };
             return {
                 live: true,
@@ -166,7 +196,7 @@ export class TwitchApi {
 
     async getChannelInfo() {
         return this.#channelCache.get(async () => {
-            const channel = await this.#api.channels.getChannelInfoById(this.#broadcasterId);
+            const channel = await this.#withUser((ctx) => ctx.channels.getChannelInfoById(this.#broadcasterId));
             if (!channel) return null;
             return { game: channel.gameName, title: channel.title, tags: channel.tags, language: channel.language };
         });
@@ -174,7 +204,8 @@ export class TwitchApi {
 
     /** Returns the follow date, or null if they do not follow / the scope is missing. */
     async getFollowage(userName) {
-        const user = await this.#api.users.getUserByName(userName.replace(/^@/, '').toLowerCase());
+        const target = userName.replace(/^@/, '').toLowerCase();
+        const user = await this.#withUser((ctx) => ctx.users.getUserByName(target));
         if (!user) return { found: false };
 
         const result = await this.#asModerator('moderator:read:followers', (ctx) =>
@@ -194,7 +225,9 @@ export class TwitchApi {
 
     async getRecentClips(count = 3) {
         const clips = await this.#clipsCache.get(async () => {
-            const result = await this.#api.clips.getClipsForBroadcaster(this.#broadcasterId, { limit: 10 });
+            const result = await this.#withUser((ctx) =>
+                ctx.clips.getClipsForBroadcaster(this.#broadcasterId, { limit: 10 })
+            );
             return result.data.map((clip) => ({
                 title: clip.title,
                 url: clip.url,
@@ -208,12 +241,13 @@ export class TwitchApi {
 
     /** Last played category, for shoutouts. Works whether or not they are live. */
     async getShoutoutInfo(userName) {
-        const user = await this.#api.users.getUserByName(userName.replace(/^@/, '').toLowerCase());
+        const target = userName.replace(/^@/, '').toLowerCase();
+        const user = await this.#withUser((ctx) => ctx.users.getUserByName(target));
         if (!user) return null;
-        const [channel, stream] = await Promise.all([
-            this.#api.channels.getChannelInfoById(user.id),
-            this.#api.streams.getStreamByUserId(user.id)
-        ]);
+
+        const [channel, stream] = await this.#withUser((ctx) =>
+            Promise.all([ctx.channels.getChannelInfoById(user.id), ctx.streams.getStreamByUserId(user.id)])
+        );
         return {
             displayName: user.displayName,
             name: user.name,
@@ -227,7 +261,7 @@ export class TwitchApi {
 
     async #resolveTarget(userName) {
         const clean = userName.replace(/^@/, '').toLowerCase();
-        const user = await this.#api.users.getUserByName(clean);
+        const user = await this.#withUser((ctx) => ctx.users.getUserByName(clean));
         if (!user) throw new Error(`No Twitch user named "${clean}"`);
         return user;
     }

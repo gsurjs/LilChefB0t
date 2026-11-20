@@ -23,7 +23,7 @@ export function startHealthServer(bot) {
             version: bot.version,
             uptimeSeconds: Math.floor((Date.now() - bot.startedAt) / 1000),
             chat: { connected: bot.chat.isConnected, channel: bot.chat.channel },
-            eventsub: bot.events?.activeNames ?? [],
+            events: bot.events?.activeNames ?? [],
             ai: {
                 enabled: bot.state.aiEnabled,
                 model: config.ai.model,

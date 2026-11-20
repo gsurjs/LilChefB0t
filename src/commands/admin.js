@@ -78,7 +78,7 @@ export function adminCommands() {
                 return (
                     `🧑🏻‍🍳 v${bot.version} | up ${humanDuration(Date.now() - bot.startedAt)} | ` +
                     `${bot.registry.size} commands | chat ${bot.chat.isConnected ? '✅' : '❌'} | ` +
-                    `eventsub: ${events.length > 0 ? events.join(',') : 'none'} | ` +
+                    `events: ${events.length > 0 ? events.join(',') : 'none'} | ` +
                     `autopost ${bot.autopost.isEnabled ? 'on' : 'off'}`
                 );
             }
