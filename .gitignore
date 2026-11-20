@@ -1,4 +1,12 @@
 node_modules/
-.env
 *.log
 .DS_Store
+
+# Secrets. The glob catches .env.local, .env.v1-backup and friends;
+# .env.example is the committed template and is explicitly re-included.
+.env
+.env.*
+!.env.example
+
+# Tokens, spend ledger and viewer notes. Credentials and runtime state.
+data/

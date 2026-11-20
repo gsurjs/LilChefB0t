@@ -1,21 +1,32 @@
 {
   "name": "chefbot",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "AI-powered Twitch chat bot for roguedubz, built on Twurple + the Claude API",
+  "main": "src/index.js",
+  "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
-    "start": "node bot.js",
-    "dev": "node bot.js"
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "auth": "node scripts/auth.js",
+    "test": "node --test test/"
   },
-  "keywords": [],
+  "keywords": [
+    "twitch",
+    "bot",
+    "claude",
+    "twurple"
+  ],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.6.0",
-    "tmi.js": "^1.8.5"
+    "@anthropic-ai/sdk": "^1.11.0",
+    "@twurple/api": "^8.2.0",
+    "@twurple/auth": "^8.2.0",
+    "@twurple/chat": "^8.2.0",
+    "@twurple/eventsub-ws": "^8.2.0",
+    "dotenv": "^16.6.0"
   }
 }
