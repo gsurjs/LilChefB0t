@@ -53,9 +53,19 @@ export class TwitchApi {
     #channelCache = new Cached(CHANNEL_TTL_MS);
     #clipsCache = new Cached(CLIPS_TTL_MS);
 
-    constructor(authProvider) {
+    #knownUserIds;
+
+    /**
+     * @param authProvider  The refreshing provider backing Helix.
+     * @param knownUserIds  Every user the provider has a token for. Used to find
+     *   whichever account actually holds a scope, rather than assuming it is the
+     *   bot or the broadcaster -- a moderator's token is a perfectly good third
+     *   option, and sometimes the only one available.
+     */
+    constructor(authProvider, { knownUserIds = [] } = {}) {
         this.#authProvider = authProvider;
         this.#api = new ApiClient({ authProvider });
+        this.#knownUserIds = knownUserIds;
     }
 
     get client() {
@@ -98,23 +108,43 @@ export class TwitchApi {
         return this.scopesFor(userId).includes(scope);
     }
 
+    /** Whether the provider holds a token for this user at all. */
+    knows(userId) {
+        return Boolean(userId) && this.#authProvider.hasUser?.(userId) === true;
+    }
+
     /**
-     * Run a Helix call that needs a moderator token.
+     * The user ID of whichever authorized account holds `scope`, or null.
      *
-     * Twurple defaults these endpoints to the broadcaster's token. The bot is
-     * normally the moderator, so prefer its context and fall back to the
-     * broadcaster only when the bot lacks the scope.
+     * Preference order is bot, then broadcaster, then any other account (a
+     * moderator). The bot first so it acts as itself where it can; a moderator
+     * last because it is the fallback, not the intent -- but a perfectly valid
+     * one, since Helix checks the scope on the token rather than caring which
+     * role the human thinks it plays.
+     */
+    findHolder(scope) {
+        const candidates = [this.#botId, this.#broadcasterId, ...this.#knownUserIds];
+        for (const userId of candidates) {
+            if (userId && this.hasScope(userId, scope)) return userId;
+        }
+        return null;
+    }
+
+    /**
+     * Run a Helix call that needs a token carrying `scope`.
+     *
+     * Twurple defaults these endpoints to the broadcaster's token, so the user
+     * context has to be set explicitly to whichever account actually holds it.
      */
     async #asModerator(scope, runner) {
-        if (this.#botId && this.hasScope(this.#botId, scope)) {
-            return this.#api.asUser(this.#botId, runner);
+        const userId = this.findHolder(scope);
+        if (!userId) {
+            throw new Error(
+                `No authorized token holds "${scope}". Re-run \`npm run auth\` and approve it ` +
+                    'for an account that moderates this channel.'
+            );
         }
-        if (this.#broadcasterId && this.hasScope(this.#broadcasterId, scope)) {
-            return this.#api.asUser(this.#broadcasterId, runner);
-        }
-        throw new Error(
-            `No authorized token holds "${scope}". Re-run \`npm run auth\` and approve it for the bot account.`
-        );
+        return this.#api.asUser(userId, runner);
     }
 
     // ---------------------------------------------------------------- read side

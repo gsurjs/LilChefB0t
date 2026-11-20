@@ -57,7 +57,9 @@ async function main() {
     // token set, chat posts as the bot while the API runs on the broadcaster.
     const { provider, vault } = await createAuthProvider();
     const chatProvider = await createChatAuthProvider(provider);
-    const twitchApi = await new TwitchApi(provider).init();
+    const twitchApi = await new TwitchApi(provider, {
+        knownUserIds: Object.keys(vault.users)
+    }).init();
     const chat = new ChatBridge(chatProvider);
 
     // --- AI ---------------------------------------------------------------
@@ -120,6 +122,9 @@ async function main() {
         };
 
         if (await registry.dispatch(ctx)) return;
+
+        // Cheers are ordinary messages carrying bits, not a separate event.
+        if (msg.isCheer && (await bot.events?.handleCheer(msg, user))) return;
 
         // Greet genuinely new chatters. `isFirst` is Twitch's own flag, so this
         // fires once per person per channel, not once per session.

@@ -63,22 +63,34 @@ You'll be asked to authorize up to two accounts:
 
 Make the bot account a **moderator** in the channel so its moderation scopes apply.
 
-#### If you can't log into the bot account
+#### Running in a channel you don't own
 
-You don't need to. Chat identity and API authority are separate here: set
-`BOT_CHAT_TOKEN` to any working chat token for the bot account (a v1
-`OAUTH_TOKEN` from twitchtokengenerator works, and is read automatically as a
-fallback), and `npm run auth` will skip the bot account entirely and authorize
-only the broadcaster — with the moderator scopes included, since moderation then
-runs on that token.
+Chat identity and API authority are separate here, so you don't need every
+account's login. Three roles, independently satisfiable:
 
-The result: chat still posts under the bot's name, while moderation, followage
-and EventSub run with the broadcaster's authority. The bot account never logs in.
+| Role | Supplies | How |
+|---|---|---|
+| Bot | the name in chat | `BOT_CHAT_TOKEN`, or `npm run auth` |
+| Broadcaster | stream online/offline events | `npm run auth` |
+| Moderator | bans, timeouts, deletes, followage | `npm run auth` |
 
-The tradeoff is that a static token can't refresh. It works until Twitch revokes
-it, at which point chat stops and you'd need either the bot account's login or to
-fall back to running as the broadcaster. The bot validates the token at startup,
-so that failure is a clear boot error rather than a silent one.
+**If you can't log into the bot account**, set `BOT_CHAT_TOKEN` to any working
+chat token for it (a v1 `OAUTH_TOKEN` from twitchtokengenerator works and is
+read automatically as a fallback). `npm run auth` then skips that account
+entirely — chat still posts under the bot's name.
+
+**If you can't log into the broadcaster account either**, authorize your own
+account as a moderator of the channel. `npm run auth` offers this explicitly.
+You keep everything except stream online/offline alerts, because Twitch
+authorizes those as the broadcaster and nothing substitutes.
+
+Raid, sub, resub, gift-sub and cheer alerts are unaffected by any of this —
+they arrive over chat, which needs no scopes. See [Stream events](#stream-events).
+
+The tradeoff on a static chat token is that it can't refresh. It works until
+Twitch revokes it, at which point chat stops and you'd need the bot account's
+login or a fallback account. The bot validates it at startup, so that failure is
+a clear boot error rather than a silent one.
 
 ### 3. Get a Claude API key
 
@@ -209,16 +221,27 @@ effort `high` — which is why `CLAUDE_EFFORT` is validated down to `low`/`mediu
 
 ## Stream events
 
-Over EventSub WebSockets. Each subscription is gated on the scopes actually held, and
-skipped (with the missing scope named in the log) rather than failing at startup.
+Alerts come from two sources, and the split matters: **most of them need no scopes
+at all**, because Twitch delivers them over chat as IRC `USERNOTICE`.
 
-| Event | Requires | Behaviour |
-|---|---|---|
-| Raid | nothing | AI shoutout naming what the raider last streamed |
-| Stream online / offline | nothing | Tracked internally |
-| Follow | `moderator:read:followers` (bot or broadcaster) | Template greeting — follows arrive in bursts, so no API call per follow |
-| Sub / resub / gift sub | `channel:read:subscriptions` (broadcaster) | AI thank-you, reacting to resub messages |
-| Cheer | `bits:read` (broadcaster) | AI thank-you |
+| Event | Source | Requires | Behaviour |
+|---|---|---|---|
+| Raid | chat | nothing | AI shoutout naming what the raider last streamed |
+| Sub / resub | chat | nothing | AI thank-you, reacting to resub messages |
+| Gift sub / community gift | chat | nothing | AI thank-you to the gifter |
+| Cheer | chat | nothing | AI thank-you above `AI_CHEER_THRESHOLD` bits |
+| Follow | EventSub | `moderator:read:followers` | Template greeting — follows arrive in bursts, so no API call per follow |
+| Stream online / offline | EventSub | the **broadcaster's** token | Tracked internally |
+
+EventSub only covers what chat cannot express. Twurple picks the token per
+subscription from its `authUserId`, which for online/offline is the broadcaster —
+so those are skipped when that account isn't authorized, while follows work from
+a moderator's token. Skipped subscriptions are logged with the reason; they never
+fail startup, and they never affect the chat-sourced alerts.
+
+Cheers are ordinary chat messages carrying bits rather than a distinct event, so
+they're handled in the message pipeline. `AI_CHEER_THRESHOLD` (default 100) keeps
+every 1-bit emote in a busy chat from triggering a reaction.
 
 First-time chatters are greeted using Twitch's own `isFirst` flag, so it fires once per
 person per channel.

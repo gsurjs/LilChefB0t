@@ -2,20 +2,24 @@
 /**
  * One-time Twitch authorization, via Device Code Flow.
  *
- * This replaces pasting a token from twitchtokengenerator.com. That token had
- * no refresh token, so it expired and the bot stopped working -- repeatedly.
- * What this writes to data/tokens.json includes a refresh token, and the bot
- * renews it in the background from then on.
+ * This replaces pasting a token from twitchtokengenerator.com. Those tokens
+ * carry only chat scopes, so Helix moderation and followage are out of reach,
+ * and they cannot be renewed if Twitch ever revokes them. What this writes to
+ * data/tokens.json carries the scopes the bot needs plus a refresh token, which
+ * the bot then rotates in the background.
  *
  * Device Code Flow needs no redirect URI, no local web server, and no client
  * secret: you get a code, you type it into twitch.tv/activate, done.
+ *
+ * Which accounts you are asked for depends on what you can sign into -- see the
+ * branches in main(). Running a bot in a channel you do not own is supported.
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { startDeviceCodeFlow, exchangeDeviceCode, getTokenInfo } from '@twurple/auth';
 
 import { config, paths } from '../src/config.js';
-import { TokenVault, BOT_SCOPES, BROADCASTER_SCOPES } from '../src/twitch/auth.js';
+import { TokenVault, BOT_SCOPES, BROADCASTER_SCOPES, MODERATOR_SCOPES } from '../src/twitch/auth.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -122,8 +126,8 @@ async function main() {
 
     // A static chat token covers chat under the bot's own name, so the bot
     // account never needs to log in here. Everything else -- moderation,
-    // followage, EventSub -- then runs on the broadcaster's token, which means
-    // the broadcaster needs the moderator scopes too, not just its own.
+    // followage, EventSub -- runs on one other account, and which one you can
+    // sign into decides the feature set. The prompt below spells that out.
     const staticChat = Boolean(config.twitch.botChatToken);
 
     const ALL_SCOPES = [...new Set([...BOT_SCOPES, ...BROADCASTER_SCOPES])];
@@ -135,26 +139,54 @@ async function main() {
                     `\nBOT_USERNAME and CHANNEL_NAME are both "${config.twitch.channelName}", so the bot` +
                         '\nruns as the broadcaster. Authorizing once with the combined scope set.'
                 );
-            } else {
-                console.log(
-                    `\nA static chat token is configured, so "${config.twitch.botUsername}" does not need` +
-                        `\nto log in — it keeps posting in chat under its own name.` +
-                        `\n\nOnly "${config.twitch.channelName}" needs authorizing. Its token will carry the` +
-                        '\nmoderator scopes as well, since moderation runs through it.'
-                );
+                const combined = await authorize({
+                    role: 'bot + broadcaster',
+                    scopes: ALL_SCOPES,
+                    expectedLogin: config.twitch.channelName,
+                    intents: ['chat'],
+                    vault
+                });
+                seeds.BOT_REFRESH_TOKEN = combined.refreshToken;
+                await vault.close();
+
+                printDeploySeeds(seeds);
+                console.log('\n✅ Done. Start the bot with `npm start`.\n');
+                return;
             }
 
-            const combined = await authorize({
-                role: singleAccount ? 'bot + broadcaster' : 'broadcaster (+ moderation)',
-                scopes: ALL_SCOPES,
-                expectedLogin: config.twitch.channelName,
-                // Keep the chat intent either way: if the static token is ever
-                // removed, chat falls back to this account instead of breaking.
-                intents: ['chat'],
+            // Static chat token: the bot account never logs in. What remains is
+            // one account for Helix, and which one you can actually sign into
+            // decides how much works. Ask rather than assume.
+            console.log(
+                `\nA static chat token is configured, so "${config.twitch.botUsername}" does not need to` +
+                    '\nlog in — it keeps posting in chat under its own name.' +
+                    '\n\nOne more account is needed, for the Twitch API. Which can you sign in as?\n' +
+                    `\n  [1] ${config.twitch.channelName} (the broadcaster)` +
+                    '\n      Everything works, including stream online/offline alerts.\n' +
+                    '\n  [2] your own account, as a moderator of the channel' +
+                    '\n      Moderation, followage, all commands and all AI features work.' +
+                    '\n      Raid/sub/resub/gift/cheer alerts work too — those come over chat.' +
+                    '\n      Only stream online/offline alerts are unavailable, since Twitch' +
+                    '\n      authorizes those as the broadcaster.\n'
+            );
+
+            const choice = (await rl.question('Choose [1/2]: ')).trim();
+            const asModerator = choice === '2';
+
+            const account = await authorize({
+                role: asModerator ? 'moderator' : 'broadcaster (+ moderation)',
+                scopes: asModerator ? MODERATOR_SCOPES : ALL_SCOPES,
+                // A moderator's login is whatever they sign in as, so do not
+                // warn about a mismatch we cannot predict.
+                expectedLogin: asModerator ? null : config.twitch.channelName,
+                // Keep the chat intent on the broadcaster so chat has a fallback
+                // if the static token is ever removed. A moderator cannot serve
+                // that purpose, so it gets no chat intent.
+                intents: asModerator ? [] : ['chat'],
                 vault
             });
 
-            seeds[singleAccount ? 'BOT_REFRESH_TOKEN' : 'BROADCASTER_REFRESH_TOKEN'] = combined.refreshToken;
+            seeds[asModerator ? 'MODERATOR_REFRESH_TOKEN' : 'BROADCASTER_REFRESH_TOKEN'] = account.refreshToken;
             await vault.close();
 
             printDeploySeeds(seeds);

@@ -4,19 +4,24 @@ import { config } from '../config.js';
 import { pick, plural } from '../util.js';
 
 /**
- * Stream events, over EventSub WebSockets.
+ * Stream event reactions, from two sources.
  *
- * None of this was reachable from the old IRC-only bot. Twitch's investment in
- * new chat and channel features goes to EventSub and Helix, so raids, subs,
- * cheers and follows only arrive here.
+ * **Chat (IRC USERNOTICE)** carries raids, subs, resubs, gift subs and cheers.
+ * It needs no scopes beyond the chat connection itself, so it works for anyone
+ * who can run the bot at all -- including the case where you develop for
+ * someone else's channel and will never hold the broadcaster's token.
  *
- * Each subscription is gated on the scopes we actually hold. Raids and stream
- * online/offline need none, so they work with just the bot account authorized;
- * subs and cheers need the broadcaster's own token and are skipped (loudly, with
- * the missing scope named) when it is absent.
+ * **EventSub** adds only what chat cannot express: stream online/offline and
+ * follows. Twurple picks the token per subscription type from its `authUserId`,
+ * and for online/offline that is the broadcaster, so those are skipped unless
+ * the broadcaster is authorized. Follows authorize as the moderator, so they
+ * work from a moderator token.
+ *
+ * Preferring chat is not a workaround. It is fewer scopes, fewer moving parts,
+ * and no dependency on an account you might not control.
  */
 export class EventBridge {
-    #listener;
+    #listener = null;
     #twitchApi;
     #chat;
     #ai;
@@ -28,7 +33,6 @@ export class EventBridge {
         this.#chat = chat;
         this.#ai = ai;
         this.#state = state;
-        this.#listener = new EventSubWsListener({ apiClient: twitchApi.client });
     }
 
     get activeNames() {
@@ -53,160 +57,203 @@ export class EventBridge {
         await this.#chat.say(fallback);
     }
 
-    /** Register one subscription, tolerating failures so one bad scope cannot stop the rest. */
-    #add(name, requirement, subscribe) {
-        if (requirement && !requirement.ok) {
-            logger.warn(`EventSub "${name}" skipped — needs ${requirement.scope} on the ${requirement.who} account`);
-            return;
-        }
-        try {
-            subscribe();
-            this.#active.push(name);
-        } catch (err) {
-            logger.error(`EventSub "${name}" failed to subscribe: ${err.message}`);
-        }
+    /** Wrap a handler so one bad reaction cannot take the process down. */
+    #safely(name, handler) {
+        return async (...args) => {
+            try {
+                await handler(...args);
+            } catch (err) {
+                logger.error(`Reaction to "${name}" failed:`, err);
+            }
+        };
     }
 
-    #needs(scope, { allowBot = false } = {}) {
-        const broadcasterId = this.#twitchApi.broadcasterId;
-        const botId = this.#twitchApi.botId;
+    // ----------------------------------------------------------- chat sourced
 
-        if (this.#twitchApi.hasScope(broadcasterId, scope)) {
-            return { ok: true, userId: broadcasterId, scope, who: 'broadcaster' };
-        }
-        if (allowBot && this.#twitchApi.hasScope(botId, scope)) {
-            return { ok: true, userId: botId, scope, who: 'bot' };
-        }
-        return { ok: false, scope, who: allowBot ? 'broadcaster or bot' : 'broadcaster' };
-    }
+    /** Raids, subs and cheers over IRC. No scopes required. */
+    #startChatEvents() {
+        const client = this.#chat.client;
 
-    start() {
-        const channelId = this.#twitchApi.broadcasterId;
+        client.onRaid(
+            this.#safely('raid', async (_channel, _user, info) => {
+                logger.info(`RAID from ${info.displayName} with ${info.viewerCount} viewers`);
 
-        // --- No scope required -------------------------------------------------
-
-        this.#add('raid', null, () =>
-            this.#listener.onChannelRaidTo(channelId, async (event) => {
-                logger.info(`RAID from ${event.raidingBroadcasterDisplayName} with ${event.viewers} viewers`);
-                const info = await this.#twitchApi.getShoutoutInfo(event.raidingBroadcasterName).catch(() => null);
-                const theyPlay = info?.game ? ` They were last streaming ${info.game}.` : '';
+                // Look up what they stream so the shoutout says something real.
+                const about = await this.#twitchApi.getShoutoutInfo(info.displayName).catch(() => null);
+                const theyPlay = about?.game ? ` They were last streaming ${about.game}.` : '';
+                const link = about?.name ?? info.displayName.toLowerCase();
 
                 await this.#announce({
                     instruction:
-                        `${event.raidingBroadcasterDisplayName} just raided the channel with ` +
-                        `${plural(event.viewers, 'viewer')}.${theyPlay} ` +
-                        'Welcome the raiders warmly and tell chat to go follow them.',
+                        `${info.displayName} just raided the channel with ${plural(info.viewerCount, 'viewer')}.` +
+                        `${theyPlay} Welcome the raiders warmly and tell chat to go follow them.`,
                     fallback:
-                        `🚨 RAID! ${event.raidingBroadcasterDisplayName} brought ${plural(event.viewers, 'viewer')}! ` +
-                        `Go show them love: https://twitch.tv/${event.raidingBroadcasterName}`
+                        `🚨 RAID! ${info.displayName} brought ${plural(info.viewerCount, 'viewer')}! ` +
+                        `Go show them love: https://twitch.tv/${link}`
                 });
             })
         );
 
-        this.#add('stream.online', null, () =>
-            this.#listener.onStreamOnline(channelId, async (event) => {
-                logger.info(`Stream went ONLINE (${event.startDate?.toISOString?.() ?? 'now'})`);
-                this.#state.streamLive = true;
+        client.onSub(
+            this.#safely('sub', async (_channel, _user, info) => {
+                logger.info(`SUB from ${info.displayName} (${info.planName ?? info.plan})`);
+                await this.#announce({
+                    instruction:
+                        `${info.displayName} just subscribed for the first time` +
+                        `${info.isPrime ? ' with Prime' : ''}. Thank them.`,
+                    fallback: `💜 Welcome to the kitchen, ${info.displayName}! Thanks for subscribing!`
+                });
             })
         );
 
-        this.#add('stream.offline', null, () =>
+        client.onResub(
+            this.#safely('resub', async (_channel, _user, info) => {
+                logger.info(`RESUB from ${info.displayName} (${info.months} months)`);
+                const streak = info.streak ? ` They are on a ${info.streak}-month streak.` : '';
+                const said = info.message ? ` They said: "${info.message}"` : '';
+
+                await this.#announce({
+                    instruction:
+                        `${info.displayName} resubscribed for month ${info.months}.${streak}${said} ` +
+                        'Thank them, and react to what they said if they said anything.',
+                    fallback: `💜 ${info.displayName} has been here ${plural(info.months, 'month')}! Thank you!`
+                });
+            })
+        );
+
+        client.onSubGift(
+            this.#safely('subgift', async (_channel, _user, info) => {
+                // A community gift fires onCommunitySub plus one onSubGift per
+                // recipient. Announcing both would spam chat, so the bulk event
+                // owns the announcement and the individual ones stay quiet.
+                if (info.gifterGiftCount && info.gifterGiftCount > 1) return;
+
+                const gifter = info.gifterDisplayName ?? 'An anonymous chef';
+                logger.info(`SUBGIFT ${gifter} -> ${info.displayName}`);
+                await this.#announce({
+                    instruction: `${gifter} just gifted a subscription to ${info.displayName}. Thank the gifter.`,
+                    fallback: `🎁 ${gifter} gifted a sub to ${info.displayName}! Legend!`
+                });
+            })
+        );
+
+        client.onCommunitySub(
+            this.#safely('communitysub', async (_channel, _user, info) => {
+                const gifter = info.gifterDisplayName ?? 'An anonymous chef';
+                logger.info(`COMMUNITY SUB ${gifter} x${info.count}`);
+                await this.#announce({
+                    instruction: `${gifter} just gifted ${plural(info.count, 'subscription')} to the channel. Thank them.`,
+                    fallback: `🎁 ${gifter} dropped ${plural(info.count, 'sub')} on the channel! Absolute legend!`
+                });
+            })
+        );
+
+        this.#active.push('raid', 'sub', 'resub', 'subgift', 'communitysub');
+
+        // Cheers are ordinary chat messages carrying bits, so they are handled
+        // in the message pipeline rather than here. See handleCheer().
+        if (config.ai.cheerThreshold > 0) this.#active.push('cheer');
+    }
+
+    /**
+     * Called from the message pipeline for any message carrying bits.
+     * Returns true when it announced, so the caller can skip other handling.
+     */
+    async handleCheer(msg, user) {
+        const bits = msg.bits ?? 0;
+        if (bits < config.ai.cheerThreshold) return false;
+
+        logger.info(`CHEER ${bits} bits from ${user.displayName}`);
+        await this.#announce({
+            instruction: `${user.displayName} just cheered ${plural(bits, 'bit')}. Thank them in one short line.`,
+            fallback: `✨ ${user.displayName} dropped ${plural(bits, 'bit')}! Thank you!`
+        });
+        return true;
+    }
+
+    // -------------------------------------------------------- EventSub sourced
+
+    #startEventSub() {
+        const channelId = this.#twitchApi.broadcasterId;
+
+        // Twurple authorizes stream.online/offline as the broadcaster, so there
+        // is no point attempting them without that account's token.
+        const broadcasterAuthorized = this.#twitchApi.knows(channelId);
+
+        // Follows authorize as the moderator, which a mod token satisfies.
+        const followAuth = this.#twitchApi.findHolder('moderator:read:followers');
+
+        if (!broadcasterAuthorized && !followAuth) {
+            logger.info(
+                'EventSub skipped entirely: stream online/offline needs the broadcaster token, ' +
+                    'and follows need moderator:read:followers. Chat-based alerts are unaffected.'
+            );
+            return;
+        }
+
+        this.#listener = new EventSubWsListener({ apiClient: this.#twitchApi.client });
+
+        this.#listener.onSubscriptionCreateSuccess((sub) => logger.debug(`EventSub ready: ${sub.id}`));
+        this.#listener.onSubscriptionCreateFailure((sub, error) =>
+            // Twitch refuses these asynchronously, so this is the only place a
+            // rejected subscription becomes visible.
+            logger.warn(`EventSub subscription refused (${sub.id}): ${error.message}`)
+        );
+
+        if (broadcasterAuthorized) {
+            this.#listener.onStreamOnline(channelId, (event) => {
+                logger.info(`Stream went ONLINE (${event.startDate?.toISOString?.() ?? 'now'})`);
+                this.#state.streamLive = true;
+            });
             this.#listener.onStreamOffline(channelId, () => {
                 logger.info('Stream went OFFLINE');
                 this.#state.streamLive = false;
-            })
-        );
+            });
+            this.#active.push('stream.online', 'stream.offline');
+        } else {
+            logger.info('EventSub: stream online/offline skipped (needs the broadcaster account authorized)');
+        }
 
-        // --- Broadcaster token required ----------------------------------------
-
-        const subsScope = this.#needs('channel:read:subscriptions');
-
-        this.#add('subscribe', subsScope, () =>
-            this.#listener.onChannelSubscription(channelId, async (event) => {
-                // Gift recipients are announced by the gift event instead, so a
-                // gifted sub does not get two messages.
-                if (event.isGift) return;
-                logger.info(`SUB from ${event.userDisplayName} (tier ${event.tier})`);
-                await this.#announce({
-                    instruction: `${event.userDisplayName} just subscribed for the first time. Thank them.`,
-                    fallback: `💜 Welcome to the kitchen, ${event.userDisplayName}! Thanks for subscribing!`
-                });
-            })
-        );
-
-        this.#add('resub', subsScope, () =>
-            this.#listener.onChannelSubscriptionMessage(channelId, async (event) => {
-                logger.info(`RESUB from ${event.userDisplayName} (${event.cumulativeMonths} months)`);
-                const streak = event.streakMonths ? ` They are on a ${event.streakMonths}-month streak.` : '';
-                const said = event.messageText ? ` They said: "${event.messageText}"` : '';
-
-                await this.#announce({
-                    instruction:
-                        `${event.userDisplayName} resubscribed for month ${event.cumulativeMonths}.${streak}${said} ` +
-                        'Thank them and react to what they said if they said anything.',
-                    fallback: `💜 ${event.userDisplayName} has been here ${plural(
-                        event.cumulativeMonths,
-                        'month'
-                    )}! Thank you!`
-                });
-            })
-        );
-
-        this.#add('subgift', subsScope, () =>
-            this.#listener.onChannelSubscriptionGift(channelId, async (event) => {
-                const gifter = event.isAnonymous ? 'An anonymous chef' : event.gifterDisplayName;
-                logger.info(`SUBGIFT x${event.amount} from ${gifter}`);
-                await this.#announce({
-                    instruction: `${gifter} just gifted ${plural(event.amount, 'subscription')} to the channel. Thank them.`,
-                    fallback: `🎁 ${gifter} gifted ${plural(event.amount, 'sub')}! Absolute legend!`
-                });
-            })
-        );
-
-        this.#add('cheer', this.#needs('bits:read'), () =>
-            this.#listener.onChannelCheer(channelId, async (event) => {
-                const who = event.isAnonymous ? 'An anonymous chef' : event.userDisplayName;
-                logger.info(`CHEER ${event.bits} bits from ${who}`);
-                await this.#announce({
-                    instruction:
-                        `${who} just cheered ${plural(event.bits, 'bit')}. ` +
-                        (event.message ? `Their message: "${event.message}". ` : '') +
-                        'Thank them.',
-                    fallback: `✨ ${who} dropped ${plural(event.bits, 'bit')}! Thank you!`
-                });
-            })
-        );
-
-        // Follows accept a moderator token, so the bot can cover this one.
-        const followScope = this.#needs('moderator:read:followers', { allowBot: true });
-        this.#add('follow', followScope, () =>
-            this.#listener.onChannelFollow(channelId, followScope.userId, async (event) => {
-                logger.info(`FOLLOW from ${event.userDisplayName}`);
-                // Deliberately template-only: follows arrive in bursts, and an
-                // API call per follow is a good way to burn the daily budget.
-                await this.#chat.say(
-                    pick([
-                        `👋 Thanks for the follow, ${event.userDisplayName}! Pull up a stool.`,
-                        `🧑🏻‍🍳 ${event.userDisplayName} joined the kitchen staff. Welcome!`,
-                        `💜 Welcome in, ${event.userDisplayName}!`
-                    ])
-                );
-            })
-        );
+        if (followAuth) {
+            this.#listener.onChannelFollow(
+                channelId,
+                followAuth,
+                this.#safely('follow', async (event) => {
+                    logger.info(`FOLLOW from ${event.userDisplayName}`);
+                    // Template-only on purpose: follows arrive in bursts, and an
+                    // API call per follow is a good way to burn the daily budget.
+                    await this.#chat.say(
+                        pick([
+                            `👋 Thanks for the follow, ${event.userDisplayName}! Pull up a stool.`,
+                            `🧑🏻‍🍳 ${event.userDisplayName} joined the kitchen staff. Welcome!`,
+                            `💜 Welcome in, ${event.userDisplayName}!`
+                        ])
+                    );
+                })
+            );
+            this.#active.push('follow');
+        } else {
+            logger.info('EventSub: follows skipped (needs moderator:read:followers)');
+        }
 
         this.#listener.start();
+    }
 
-        if (this.#active.length === 0) {
-            logger.warn('EventSub started with no active subscriptions');
-        } else {
-            logger.info(`EventSub active: ${this.#active.join(', ')}`);
+    start() {
+        this.#startChatEvents();
+        try {
+            this.#startEventSub();
+        } catch (err) {
+            // EventSub is the optional half; chat alerts must survive its failure.
+            logger.error(`EventSub failed to start, continuing without it: ${err.message}`);
         }
+        logger.info(`Event reactions active: ${this.#active.join(', ')}`);
         return this;
     }
 
     stop() {
         try {
-            this.#listener.stop();
+            this.#listener?.stop();
         } catch (err) {
             logger.debug(`EventSub stop error (ignored): ${err.message}`);
         }

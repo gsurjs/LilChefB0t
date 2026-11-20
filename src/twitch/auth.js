@@ -32,6 +32,24 @@ export const BROADCASTER_SCOPES = [
     'channel:read:redemptions'
 ];
 
+/**
+ * Scopes for a moderator account that is neither the bot nor the broadcaster.
+ *
+ * This is the "I build bots for someone else's channel" case. Helix checks the
+ * scope on the token and that the user moderates the channel -- it does not
+ * care which role you consider the account to play. So a moderator's token
+ * covers bans, timeouts, message deletion and followage in full.
+ *
+ * What it cannot cover is anything Twitch authorizes as the broadcaster:
+ * stream online/offline via EventSub. Raids, subs and cheers are unaffected
+ * because those arrive over chat.
+ */
+export const MODERATOR_SCOPES = [
+    'moderator:manage:banned_users',
+    'moderator:manage:chat_messages',
+    'moderator:read:followers'
+];
+
 /** Keys Twurple's AccessToken actually carries; everything else is ours. */
 const tokenOf = (stored) => ({
     accessToken: stored.accessToken,
@@ -95,7 +113,8 @@ export class TokenVault {
 async function bootstrapFromEnv(provider, vault) {
     const seeds = [
         { role: 'bot', token: config.bootstrap.botRefreshToken },
-        { role: 'broadcaster', token: config.bootstrap.broadcasterRefreshToken }
+        { role: 'broadcaster', token: config.bootstrap.broadcasterRefreshToken },
+        { role: 'moderator', token: config.bootstrap.moderatorRefreshToken }
     ].filter((seed) => seed.token);
 
     if (seeds.length === 0) return;
@@ -152,17 +171,26 @@ export async function createAuthProvider() {
 
     if (vault.isEmpty) {
         // Which account is missing depends on the mode, so say the right one.
-        const needed = config.twitch.botChatToken
-            ? `authorize ${config.twitch.channelName} (the bot account is covered by its static chat token)`
-            : 'authorize the bot account (and optionally the broadcaster)';
-        const seedVar = config.twitch.botChatToken ? 'BROADCASTER_REFRESH_TOKEN' : 'BOT_REFRESH_TOKEN';
+        const lines = [`No Twitch tokens found at ${paths.tokens}.`];
 
-        throw new Error(
-            `No Twitch tokens found at ${paths.tokens}.\n` +
-                `  Run \`npm run auth\` once to ${needed}.\n` +
-                `  On a host with no interactive shell, set ${seedVar} to the value\n` +
+        if (config.twitch.botChatToken) {
+            lines.push(
+                '  The bot account is already covered by its static chat token, so one more',
+                `  account is needed for the Twitch API: either ${config.twitch.channelName}`,
+                '  (the broadcaster) or your own account as a moderator of the channel.',
+                '  Run `npm run auth` and it will ask which you can sign in as.',
+                '  On a host with no interactive shell, set BROADCASTER_REFRESH_TOKEN or',
+                '  MODERATOR_REFRESH_TOKEN to the value that `npm run auth` prints.'
+            );
+        } else {
+            lines.push(
+                '  Run `npm run auth` once to authorize the bot account (and optionally the broadcaster).',
+                '  On a host with no interactive shell, set BOT_REFRESH_TOKEN to the value',
                 '  that `npm run auth` prints.'
-        );
+            );
+        }
+
+        throw new Error(lines.join('\n'));
     }
 
     provider.onRefresh((userId, token) => {

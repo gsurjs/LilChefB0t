@@ -67,7 +67,12 @@ export const config = {
         respondToMentions: bool('AI_RESPOND_TO_MENTIONS', true),
         mentionCooldownMs: num('AI_MENTION_COOLDOWN_MS', 30_000),
         // AI-written raid/sub/cheer shoutouts (falls back to templates when off).
-        eventReactions: bool('AI_EVENT_REACTIONS', true)
+        eventReactions: bool('AI_EVENT_REACTIONS', true),
+
+        // Minimum bits before the bot reacts to a cheer. Cheers arrive as
+        // ordinary chat messages, so without a floor every 1-bit emote in a
+        // busy chat would trigger a reaction. 0 disables cheer reactions.
+        cheerThreshold: num('AI_CHEER_THRESHOLD', 100)
     },
 
     socials: {
@@ -104,7 +109,8 @@ export const config = {
      */
     bootstrap: {
         botRefreshToken: str('BOT_REFRESH_TOKEN'),
-        broadcasterRefreshToken: str('BROADCASTER_REFRESH_TOKEN')
+        broadcasterRefreshToken: str('BROADCASTER_REFRESH_TOKEN'),
+        moderatorRefreshToken: str('MODERATOR_REFRESH_TOKEN')
     }
 };
 
