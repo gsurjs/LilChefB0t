@@ -46,7 +46,24 @@ export const config = {
          * It cannot refresh. If Twitch ever revokes it, chat stops and you will
          * need the bot account's login (or switch to running as the broadcaster).
          */
-        botChatToken: str('BOT_CHAT_TOKEN') || str('OAUTH_TOKEN')
+        botChatToken: str('BOT_CHAT_TOKEN') || str('OAUTH_TOKEN'),
+
+        /**
+         * A static token authorizing Twitch API calls, in place of a refreshing one.
+         *
+         * Device-code refresh tokens are single-use, so seeding one through an
+         * environment variable only works if the rotated replacement lands on
+         * durable storage -- which makes a persistent volume mandatory, and
+         * makes a missing volume fail in a confusing way one deploy later.
+         *
+         * An implicit-grant token sidesteps all of it: no refresh token to
+         * rotate, nothing to persist, no volume required. It needs no client
+         * secret and works with a Public app. `npm run auth` can mint one.
+         *
+         * Whoever authorizes it must moderate the channel for the moderation
+         * scopes to do anything.
+         */
+        apiToken: str('TWITCH_API_TOKEN')
     },
 
     ai: {
@@ -148,6 +165,13 @@ export function validateConfig() {
     }
     if (!config.twitch.botUsername) fatal.push('BOT_USERNAME is missing');
     if (!config.twitch.channelName) fatal.push('CHANNEL_NAME is missing');
+
+    if (config.twitch.apiToken) {
+        warnings.push(
+            'Using a static token for Twitch API calls. No refresh and no volume needed, ' +
+                'but it cannot be renewed — if Twitch revokes it, re-run `npm run auth`.'
+        );
+    }
 
     if (config.twitch.botChatToken) {
         warnings.push(

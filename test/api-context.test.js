@@ -132,3 +132,31 @@ test('with no authorized user at all, the error names the fix', async () => {
     assert.equal(api.contextUserId, null);
     await assert.rejects(() => api.init(), /npm run auth|REFRESH_TOKEN/);
 });
+
+/**
+ * A StaticAuthProvider has no hasUser(), because it serves exactly one user.
+ * knows() must handle that, or contextUserId returns null and every Helix call
+ * fails with "no user token available" despite a perfectly good token.
+ */
+test('knows() works for a provider that serves a single static user', () => {
+    const staticish = {
+        // No hasUser, like StaticAuthProvider.
+        getCurrentScopesForUser: () => ['moderator:manage:banned_users']
+    };
+    const api = new TwitchApi(staticish, { knownUserIds: ['999'], apiClient: fakeApiClient() });
+
+    assert.equal(api.knows('999'), true, 'the user we were handed must be known');
+    assert.equal(api.knows('other'), false);
+    assert.equal(api.contextUserId, '999', 'and must be usable as the call context');
+    assert.equal(api.findHolder('moderator:manage:banned_users'), '999');
+});
+
+test('a static provider still routes reads through a user context', async () => {
+    const staticish = { getCurrentScopesForUser: () => ['moderator:read:followers'] };
+    const apiClient = fakeApiClient();
+    const api = new TwitchApi(staticish, { knownUserIds: ['999'], apiClient });
+
+    await api.init();
+    assert.ok(apiClient.contexts.length > 0);
+    assert.ok(apiClient.contexts.every((id) => id === '999'));
+});

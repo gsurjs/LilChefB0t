@@ -50,6 +50,45 @@ export const MODERATOR_SCOPES = [
     'moderator:read:followers'
 ];
 
+/**
+ * Ask Twitch what a raw token is, so a bad one fails at startup with a clear
+ * reason rather than as an authentication error later.
+ *
+ * Also the only way to learn a generator token's client ID and scope list,
+ * both of which StaticAuthProvider needs to be given correctly.
+ */
+async function describeToken(raw, label) {
+    const token = raw.replace(/^oauth:/, '');
+
+    let response;
+    try {
+        response = await fetch('https://id.twitch.tv/oauth2/validate', {
+            headers: { Authorization: `OAuth ${token}` }
+        });
+    } catch (err) {
+        throw new Error(`Could not reach Twitch to validate the ${label}: ${err.message}`);
+    }
+
+    if (!response.ok) {
+        throw new Error(
+            `Twitch rejected the ${label} (HTTP ${response.status}). It has been revoked or is ` +
+                'malformed. Run `npm run auth` to mint a new one.'
+        );
+    }
+
+    const info = await response.json();
+    return {
+        token,
+        clientId: info.client_id,
+        userId: info.user_id,
+        login: info.login,
+        scopes: info.scopes ?? [],
+        // expires_in of 0 means Twitch issued a non-expiring token.
+        neverExpires: info.expires_in === 0,
+        expiresIn: info.expires_in
+    };
+}
+
 /** Keys Twurple's AccessToken actually carries; everything else is ours. */
 const tokenOf = (stored) => ({
     accessToken: stored.accessToken,
@@ -183,7 +222,50 @@ async function bootstrapFromEnv(provider, vault) {
  * background and each replacement is written straight back to disk, which
  * matters because device-code refresh tokens are single-use.
  */
+/**
+ * Back Helix with a static token instead of a refreshing one.
+ *
+ * Returns the same shape as createAuthProvider so the caller does not care
+ * which it got. There is no vault because there is nothing to persist: the
+ * token does not rotate, which is the entire point.
+ */
+async function createStaticApiProvider() {
+    const info = await describeToken(config.twitch.apiToken, 'static API token (TWITCH_API_TOKEN)');
+
+    const lifetime = info.neverExpires ? 'does not expire' : `expires in ${info.expiresIn}s`;
+    logger.info(
+        `Twitch API calls run as ${info.login} via a static token (${lifetime}, scopes: ` +
+            `${info.scopes.join(', ') || 'none'})`
+    );
+
+    if (!info.neverExpires && info.expiresIn < 86_400) {
+        logger.warn(
+            `That token expires in under a day (${info.expiresIn}s). Static tokens cannot renew, ` +
+                'so the bot will stop working then. Re-run `npm run auth`.'
+        );
+    }
+
+    const missing = MODERATOR_SCOPES.filter((scope) => !info.scopes.includes(scope));
+    if (missing.length > 0) {
+        logger.warn(
+            `Static API token is missing ${missing.join(', ')} — the features needing those ` +
+                'will report the missing permission when used.'
+        );
+    }
+
+    return {
+        provider: new StaticAuthProvider(info.clientId, info.token, info.scopes),
+        // An empty vault purely so the caller's close() works uniformly.
+        vault: await new TokenVault().load(),
+        knownUserIds: [info.userId]
+    };
+}
+
 export async function createAuthProvider() {
+    // A static token takes precedence: it is the simpler mechanism, and mixing
+    // the two would leave it ambiguous which account authorizes a given call.
+    if (config.twitch.apiToken) return createStaticApiProvider();
+
     const vault = await new TokenVault().load();
 
     const provider = new RefreshingAuthProvider({
@@ -247,7 +329,7 @@ export async function createAuthProvider() {
     }
 
     logger.info(`Loaded Twitch tokens for: ${loaded.join(', ')}`);
-    return { provider, vault };
+    return { provider, vault, knownUserIds: Object.keys(vault.users) };
 }
 
 /**
@@ -265,34 +347,12 @@ export async function createAuthProvider() {
  * confusing authentication failure later.
  */
 export async function createChatAuthProvider(refreshingProvider) {
-    const raw = config.twitch.botChatToken;
-    if (!raw) return refreshingProvider;
+    if (!config.twitch.botChatToken) return refreshingProvider;
 
-    const token = raw.replace(/^oauth:/, '');
+    const info = await describeToken(config.twitch.botChatToken, 'static chat token');
 
-    let info;
-    try {
-        const response = await fetch('https://id.twitch.tv/oauth2/validate', {
-            headers: { Authorization: `OAuth ${token}` }
-        });
-        if (!response.ok) {
-            throw new Error(
-                `Twitch rejected the static chat token (HTTP ${response.status}). ` +
-                    'It has been revoked or is malformed. Remove BOT_CHAT_TOKEN/OAUTH_TOKEN to fall ' +
-                    'back to the broadcaster account, or authorize the bot account with `npm run auth`.'
-            );
-        }
-        info = await response.json();
-    } catch (err) {
-        if (err instanceof TypeError) {
-            throw new Error(`Could not reach Twitch to validate the chat token: ${err.message}`);
-        }
-        throw err;
-    }
-
-    const scopes = info.scopes ?? [];
     const required = ['chat:read', 'chat:edit'];
-    const missing = required.filter((scope) => !scopes.includes(scope));
+    const missing = required.filter((scope) => !info.scopes.includes(scope));
     if (missing.length > 0) {
         throw new Error(
             `The static chat token is missing ${missing.join(' and ')}, so the bot cannot speak. ` +
@@ -307,9 +367,10 @@ export async function createChatAuthProvider(refreshingProvider) {
         );
     }
 
-    // expires_in of 0 means Twitch issued a non-expiring token.
-    const lifetime = info.expires_in === 0 ? 'does not expire' : `expires in ${info.expires_in}s`;
-    logger.info(`Chat will post as ${info.login} via a static token (${lifetime}, scopes: ${scopes.join(', ')})`);
+    const lifetime = info.neverExpires ? 'does not expire' : `expires in ${info.expiresIn}s`;
+    logger.info(
+        `Chat will post as ${info.login} via a static token (${lifetime}, scopes: ${info.scopes.join(', ')})`
+    );
 
-    return new StaticAuthProvider(info.client_id, token, scopes);
+    return new StaticAuthProvider(info.clientId, info.token, info.scopes);
 }

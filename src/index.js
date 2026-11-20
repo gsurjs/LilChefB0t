@@ -55,11 +55,9 @@ async function main() {
     // Two providers, because the identity that chats and the identity that
     // calls Helix do not have to be the same account. With a static bot chat
     // token set, chat posts as the bot while the API runs on the broadcaster.
-    const { provider, vault } = await createAuthProvider();
+    const { provider, vault, knownUserIds } = await createAuthProvider();
     const chatProvider = await createChatAuthProvider(provider);
-    const twitchApi = await new TwitchApi(provider, {
-        knownUserIds: Object.keys(vault.users)
-    }).init();
+    const twitchApi = await new TwitchApi(provider, { knownUserIds }).init();
     const chat = new ChatBridge(chatProvider);
 
     // --- AI ---------------------------------------------------------------

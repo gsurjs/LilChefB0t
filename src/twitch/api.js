@@ -140,7 +140,11 @@ export class TwitchApi {
 
     /** Whether the provider holds a token for this user at all. */
     knows(userId) {
-        return Boolean(userId) && this.#authProvider.hasUser?.(userId) === true;
+        if (!userId) return false;
+        // A refreshing provider tracks users and can be asked directly.
+        if (typeof this.#authProvider.hasUser === 'function') return this.#authProvider.hasUser(userId);
+        // A static provider serves exactly one user: the one we were handed.
+        return this.#knownUserIds.includes(userId);
     }
 
     /**

@@ -19,6 +19,7 @@ import { stdin, stdout } from 'node:process';
 import { startDeviceCodeFlow, exchangeDeviceCode, getTokenInfo } from '@twurple/auth';
 
 import { config, paths } from '../src/config.js';
+import { getTokenInfo as inspectToken } from '@twurple/auth';
 import { TokenVault, BOT_SCOPES, BROADCASTER_SCOPES, MODERATOR_SCOPES } from '../src/twitch/auth.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,6 +101,68 @@ function printDeploySeeds(seeds) {
     console.log('    Attach a persistent volume, or you will be re-running this every deploy.');
 }
 
+/**
+ * Mint a static API token via the implicit grant flow.
+ *
+ * The device-code flow gives a refresh token, which Twitch makes single-use.
+ * On a host without persistent storage that is a trap: the seed works once,
+ * rotates, and the replacement dies with the container. Implicit grant returns
+ * no refresh token at all, so there is nothing to rotate and nothing to
+ * persist -- which is why it is the better fit for a PaaS deploy.
+ *
+ * The token arrives in the URL fragment, which never reaches a server, so it
+ * has to be copied out of the address bar by hand. That is inherent to the
+ * flow, not a shortcut.
+ */
+async function mintStaticApiToken(rl) {
+    const scopes = MODERATOR_SCOPES.join(' ');
+    const url =
+        'https://id.twitch.tv/oauth2/authorize' +
+        `?response_type=token&client_id=${config.twitch.clientId}` +
+        '&redirect_uri=http://localhost' +
+        `&scope=${encodeURIComponent(scopes)}`;
+
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log('Minting a static API token (no refresh, no volume required)');
+    console.log('─'.repeat(60));
+    console.log(`\nScopes: ${scopes}`);
+    console.log('\n  1. Make sure you are signed in to Twitch as the account that');
+    console.log(`     MODERATES #${config.twitch.channelName}, then open:\n`);
+    console.log(`     ${url}\n`);
+    console.log('  2. Click Authorize. The browser will fail to load localhost —');
+    console.log('     that is expected and fine.');
+    console.log('  3. Copy the whole URL from the address bar. It looks like:');
+    console.log('     http://localhost/#access_token=XXXX&scope=...\n');
+
+    const pasted = (await rl.question('Paste that URL (or just the access token): ')).trim();
+
+    const match = /access_token=([a-zA-Z0-9]+)/.exec(pasted);
+    const token = match ? match[1] : pasted.replace(/^oauth:/, '');
+    if (!/^[a-zA-Z0-9]{20,}$/.test(token)) {
+        throw new Error('That does not look like an access token. Re-run and paste the full redirect URL.');
+    }
+
+    const info = await inspectToken(token, config.twitch.clientId);
+    if (!info.userId) throw new Error('Twitch returned an app token, not a user token.');
+
+    const granted = info.scopes ?? [];
+    const missing = MODERATOR_SCOPES.filter((scope) => !granted.includes(scope));
+
+    console.log(`\n  ✅ Valid token for ${info.userName} (${info.userId})`);
+    console.log(`     expires: ${info.expiryDate ? info.expiryDate.toISOString() : 'never'}`);
+    if (missing.length > 0) {
+        console.warn(`  ⚠ Not granted: ${missing.join(', ')} — those features will report the gap.`);
+    }
+
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log('Set this one variable on your host. No volume needed.');
+    console.log('─'.repeat(60));
+    console.log(`\nTWITCH_API_TOKEN=${token}\n`);
+    console.log('  ⚠ Treat it like a password. Remove MODERATOR_REFRESH_TOKEN /');
+    console.log('    BROADCASTER_REFRESH_TOKEN if you had them set — this replaces them.');
+    return info;
+}
+
 async function main() {
     if (!config.twitch.clientId) {
         console.error('TWITCH_CLIENT_ID is not set in .env.\n');
@@ -155,12 +218,34 @@ async function main() {
             }
 
             // Static chat token: the bot account never logs in. What remains is
-            // one account for Helix, and which one you can actually sign into
-            // decides how much works. Ask rather than assume.
+            // one account for the Twitch API -- and two ways to authorize it,
+            // which differ in whether the host needs persistent storage.
             console.log(
                 `\nA static chat token is configured, so "${config.twitch.botUsername}" does not need to` +
                     '\nlog in — it keeps posting in chat under its own name.' +
-                    '\n\nOne more account is needed, for the Twitch API. Which can you sign in as?\n' +
+                    '\n\nOne more authorization is needed, for the Twitch API:\n' +
+                    '\n  [1] Static token — RECOMMENDED for Railway, Render, Fly' +
+                    '\n      Nothing rotates, so no persistent volume is required.' +
+                    '\n      One variable on your host and you are done.\n' +
+                    '\n  [2] Refreshing token — requires a persistent volume' +
+                    '\n      Renews itself, but the renewal must be stored somewhere' +
+                    '\n      durable or the next deploy locks itself out.\n'
+            );
+
+            const flow = (await rl.question('Choose [1/2]: ')).trim();
+
+            if (flow !== '2') {
+                console.log(
+                    '\nSign in as whichever account you can: the broadcaster gets stream' +
+                        '\nonline/offline alerts too, a moderator gets everything else.'
+                );
+                await mintStaticApiToken(rl, ALL_SCOPES);
+                console.log('\n✅ Done. Set that variable on your host and redeploy.\n');
+                return;
+            }
+
+            console.log(
+                `\nWhich account can you sign in as?\n` +
                     `\n  [1] ${config.twitch.channelName} (the broadcaster)` +
                     '\n      Everything works, including stream online/offline alerts.\n' +
                     '\n  [2] your own account, as a moderator of the channel' +
@@ -176,12 +261,7 @@ async function main() {
             const account = await authorize({
                 role: asModerator ? 'moderator' : 'broadcaster (+ moderation)',
                 scopes: asModerator ? MODERATOR_SCOPES : ALL_SCOPES,
-                // A moderator's login is whatever they sign in as, so do not
-                // warn about a mismatch we cannot predict.
                 expectedLogin: asModerator ? null : config.twitch.channelName,
-                // Keep the chat intent on the broadcaster so chat has a fallback
-                // if the static token is ever removed. A moderator cannot serve
-                // that purpose, so it gets no chat intent.
                 intents: asModerator ? [] : ['chat'],
                 vault
             });
