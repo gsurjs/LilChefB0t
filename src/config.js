@@ -98,6 +98,21 @@ export const config = {
      */
     dataDir: str('DATA_DIR') || str('RAILWAY_VOLUME_MOUNT_PATH') || path.join(projectRoot, 'data'),
 
+    /**
+     * Where that path came from, so startup can say whether state will survive.
+     *
+     * The project-relative default is correct locally and a trap on a PaaS: it
+     * lives inside the container image, so it persists across restarts but is
+     * wiped by the next deploy -- long enough to look like it works.
+     */
+    dataDirSource: str('DATA_DIR')
+        ? 'DATA_DIR'
+        : str('RAILWAY_VOLUME_MOUNT_PATH')
+          ? 'RAILWAY_VOLUME_MOUNT_PATH (attached volume)'
+          : 'project default (NOT durable on a PaaS)',
+
+    dataDirIsDurable: Boolean(str('DATA_DIR') || str('RAILWAY_VOLUME_MOUNT_PATH')),
+
     personaFile: path.join(projectRoot, 'persona.md'),
 
     /**

@@ -180,6 +180,7 @@ async function main() {
                 : 'not configured'
         }`,
         `Budget:     $${config.ai.dailyUsdCap.toFixed(2)}/day`,
+        `Data:       ${config.dataDir} [${config.dataDirSource}]`,
         `Events:     ${bot.events.activeNames.join(', ') || 'none'}`,
         `Admins:     ${config.twitch.authorizedUsers.join(', ') || 'none'}`,
         `Autopost:   ${autopost.isEnabled ? 'on' : 'off (!autopost on)'}`

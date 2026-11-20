@@ -127,6 +127,16 @@ async function bootstrapFromEnv(provider, vault) {
     }
 
     logger.info(`No token file yet — bootstrapping from ${seeds.map((s) => s.role).join(' and ')} refresh token(s)`);
+    logger.info(`Token store: ${paths.tokens}  [${config.dataDirSource}]`);
+
+    if (!config.dataDirIsDurable) {
+        logger.warn(
+            'That path is inside the container, so the rotated token will be LOST on the next ' +
+                'deploy and this seed cannot be reused — Twitch invalidates it the moment it is ' +
+                'redeemed. Attach a persistent volume (Railway sets RAILWAY_VOLUME_MOUNT_PATH ' +
+                'automatically) or set DATA_DIR, before relying on this.'
+        );
+    }
 
     for (const seed of seeds) {
         try {
@@ -138,10 +148,26 @@ async function bootstrapFromEnv(provider, vault) {
             });
             logger.info(`Bootstrapped the ${seed.role} account (${userId})`);
         } catch (err) {
-            logger.error(
-                `Could not bootstrap the ${seed.role} account: ${err.message}. ` +
-                    'That refresh token may already have been spent — re-run `npm run auth`.'
-            );
+            const spent = /invalid refresh token/i.test(err.message);
+            logger.error(`Could not bootstrap the ${seed.role} account: ${err.message}`);
+
+            if (spent && !config.dataDirIsDurable) {
+                // The usual cause: it worked once, rotated, then the container
+                // was replaced and took the replacement with it.
+                logger.error(
+                    'This seed was already redeemed, and the replacement was written to a ' +
+                        'non-durable path, so it is gone. Fix in this order, or it will happen again:\n' +
+                        '    1. Attach a persistent volume to the service (or set DATA_DIR)\n' +
+                        '    2. Run `npm run auth` again for a fresh token\n' +
+                        `    3. Update ${seed.role.toUpperCase()}_REFRESH_TOKEN with the new value`
+                );
+            } else if (spent) {
+                logger.error(
+                    'This seed was already redeemed. Run `npm run auth` again and update ' +
+                        `${seed.role.toUpperCase()}_REFRESH_TOKEN. The store at ${paths.tokens} is durable, ` +
+                        'so this should only be needed once.'
+                );
+            }
         }
     }
 
