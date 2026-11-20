@@ -17,13 +17,14 @@ export function startHealthServer(bot) {
         }
 
         const spend = bot.ledger.summary;
-        const healthy = bot.chat.isConnected;
+        const healthy = bot.chat.isConnected && !bot.chat.sawDuplicateInstance;
         const body = {
             status: healthy ? 'ok' : 'degraded',
             version: bot.version,
             uptimeSeconds: Math.floor((Date.now() - bot.startedAt) / 1000),
             chat: { connected: bot.chat.isConnected, channel: bot.chat.channel },
             events: bot.events?.activeNames ?? [],
+            duplicateInstanceDetected: bot.chat.sawDuplicateInstance,
             ai: {
                 enabled: bot.state.aiEnabled,
                 model: config.ai.model,

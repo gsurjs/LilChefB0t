@@ -60,9 +60,10 @@ export function buildTools({ twitchApi, memory }) {
                 properties: {
                     count: {
                         type: 'integer',
-                        description: 'How many clips to return, 1 to 3. Chat is narrow, so prefer 1.',
-                        minimum: 1,
-                        maximum: 3
+                        // `minimum`/`maximum` are rejected outright by strict
+                        // schemas, so the bound lives in the description and is
+                        // enforced in the executor. Never trust it from here.
+                        description: 'How many clips to return. Must be 1, 2 or 3. Chat is narrow, so prefer 1.'
                     }
                 },
                 required: ['count'],

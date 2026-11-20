@@ -79,7 +79,9 @@ export function adminCommands() {
                     `🧑🏻‍🍳 v${bot.version} | up ${humanDuration(Date.now() - bot.startedAt)} | ` +
                     `${bot.registry.size} commands | chat ${bot.chat.isConnected ? '✅' : '❌'} | ` +
                     `events: ${events.length > 0 ? events.join(',') : 'none'} | ` +
-                    `autopost ${bot.autopost.isEnabled ? 'on' : 'off'}`
+                    `autopost ${bot.autopost.isEnabled ? 'on' : 'off'}` +
+                    // Worth shouting about: it means every command answers twice.
+                    (bot.chat.sawDuplicateInstance ? ' | ⚠️ DUPLICATE INSTANCE RUNNING' : '')
                 );
             }
         },

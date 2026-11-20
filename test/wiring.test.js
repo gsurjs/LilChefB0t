@@ -92,6 +92,57 @@ test('tool definitions are valid and strict schemas are well-formed', () => {
     }
 });
 
+/**
+ * Strict tool schemas accept only a subset of JSON Schema. An unsupported
+ * keyword is a 400 on *every* request that includes the tool, not a per-call
+ * problem -- `minimum`/`maximum` on an integer broke all AI replies in
+ * production until it was caught.
+ */
+test('strict tool schemas use only keywords the API accepts', () => {
+    // Per platform.claude.com structured-outputs JSON Schema limitations.
+    const UNSUPPORTED = [
+        'minimum',
+        'maximum',
+        'exclusiveMinimum',
+        'exclusiveMaximum',
+        'multipleOf',
+        'minLength',
+        'maxLength',
+        'maxItems',
+        'uniqueItems',
+        'oneOf',
+        'not',
+        'patternProperties',
+        'dependentSchemas'
+    ];
+
+    const walk = (node, path, toolName) => {
+        if (!node || typeof node !== 'object') return;
+
+        for (const key of UNSUPPORTED) {
+            assert.ok(
+                !(key in node),
+                `${toolName}: "${key}" at ${path} is not supported in a strict schema and 400s the request`
+            );
+        }
+        // minItems is supported only as 0 or 1.
+        if ('minItems' in node) {
+            assert.ok([0, 1].includes(node.minItems), `${toolName}: minItems at ${path} must be 0 or 1`);
+        }
+
+        for (const [key, value] of Object.entries(node.properties ?? {})) {
+            walk(value, `${path}.properties.${key}`, toolName);
+        }
+        if (node.items) walk(node.items, `${path}.items`, toolName);
+        for (const [i, branch] of (node.anyOf ?? []).entries()) walk(branch, `${path}.anyOf[${i}]`, toolName);
+    };
+
+    const { definitions } = buildTools({ twitchApi: {}, memory: { setNote: () => {} } });
+    for (const tool of definitions) {
+        if (tool.strict) walk(tool.input_schema, 'input_schema', tool.name);
+    }
+});
+
 test('every executor has a tool definition, and vice versa', () => {
     const { definitions, executors } = buildTools({ twitchApi: {}, memory: { setNote: () => {} } });
     const declared = new Set(definitions.map((tool) => tool.name));

@@ -16,10 +16,12 @@ export class ChatBridge {
     #client;
     #channel;
     #messageHandlers = [];
+    #duplicateWarned = false;
 
-    constructor(authProvider) {
+    /** `client` is only passed by tests; production builds its own. */
+    constructor(authProvider, { client } = {}) {
         this.#channel = config.twitch.channelName;
-        this.#client = new ChatClient({
+        this.#client = client ?? new ChatClient({
             authProvider,
             channels: [this.#channel],
             // Resolve `channels` once; Twurple rejoins on reconnect by itself.
@@ -88,6 +90,23 @@ export class ChatBridge {
         this.#messageHandlers.push(handler);
         if (this.#messageHandlers.length === 1) {
             this.#client.onMessage(async (channel, username, text, msg) => {
+                // Twitch does not echo a message back to the connection that
+                // sent it. So a message from our own account can only have come
+                // from a *second* connection -- another instance of this bot,
+                // which is why chat would be answering everything twice.
+                if (username.toLowerCase() === config.twitch.botUsername && !this.#duplicateWarned) {
+                    this.#duplicateWarned = true;
+                    logger.error(
+                        `Saw a chat message from our own account (${username}) that this process did ` +
+                            'not send. Another instance of the bot is connected and every command will ' +
+                            'be answered twice. Check for a second service, extra replicas, or an old ' +
+                            'deployment still running, and stop one of them.'
+                    );
+                }
+
+                // Never act on our own output, however many instances there are.
+                if (username.toLowerCase() === config.twitch.botUsername) return;
+
                 for (const fn of this.#messageHandlers) {
                     try {
                         await fn({ channel, username, text, msg });
@@ -97,6 +116,11 @@ export class ChatBridge {
                 }
             });
         }
+    }
+
+    /** True once a message from our own account has been observed. */
+    get sawDuplicateInstance() {
+        return this.#duplicateWarned;
     }
 
     /** Send a message, split into chat-safe chunks. */
