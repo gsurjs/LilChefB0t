@@ -125,8 +125,18 @@ export class TwitchApi {
         return this;
     }
 
-    /** Scopes currently held by a user's token, for feature gating. */
+    /**
+     * Scopes currently held by a user's token, for feature gating.
+     *
+     * Gated on knows() first, because StaticAuthProvider ignores the user ID
+     * argument entirely and reports its single token's scopes for anybody you
+     * ask about. Without the gate, "does the bot account hold
+     * moderator:read:followers?" answers yes while really describing a
+     * different account -- which is how an EventSub subscription ended up
+     * authorized as the wrong user and got a 403.
+     */
     scopesFor(userId) {
+        if (!this.knows(userId)) return [];
         try {
             return this.#authProvider.getCurrentScopesForUser(userId);
         } catch {

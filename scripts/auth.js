@@ -148,8 +148,20 @@ async function mintStaticApiToken(rl) {
     const granted = info.scopes ?? [];
     const missing = MODERATOR_SCOPES.filter((scope) => !granted.includes(scope));
 
+    const days = info.expiryDate
+        ? Math.floor((info.expiryDate.getTime() - Date.now()) / 86_400_000)
+        : null;
+
     console.log(`\n  ✅ Valid token for ${info.userName} (${info.userId})`);
-    console.log(`     expires: ${info.expiryDate ? info.expiryDate.toISOString() : 'never'}`);
+    console.log(
+        `     expires: ${
+            info.expiryDate ? `${info.expiryDate.toISOString().slice(0, 10)} (${days} days)` : 'never'
+        }`
+    );
+    if (days !== null) {
+        console.log('     Static tokens cannot renew themselves, so put a reminder in');
+        console.log('     your calendar to re-run this before then.');
+    }
     if (missing.length > 0) {
         console.warn(`  ⚠ Not granted: ${missing.join(', ')} — those features will report the gap.`);
     }

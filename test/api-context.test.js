@@ -160,3 +160,47 @@ test('a static provider still routes reads through a user context', async () => 
     assert.ok(apiClient.contexts.length > 0);
     assert.ok(apiClient.contexts.every((id) => id === '999'));
 });
+
+/**
+ * StaticAuthProvider.getCurrentScopesForUser() ignores its argument and reports
+ * the single token's scopes for any user you ask about. Scope lookups must be
+ * gated on actual ownership, or findHolder names an account that does not hold
+ * the scope -- which produced a 403 on an EventSub subscription authorized as
+ * the bot account instead of the moderator.
+ */
+test('a static provider never claims scopes for an account it does not serve', () => {
+    const MOD = '786550584';
+    const BOT = '1326537281';
+    const staticish = {
+        // Mirrors Twurple: the userId argument is ignored.
+        getCurrentScopesForUser: () => ['moderator:read:followers', 'moderator:manage:banned_users']
+    };
+    const api = new TwitchApi(staticish, { knownUserIds: [MOD], apiClient: fakeApiClient() });
+
+    assert.deepEqual(api.scopesFor(BOT), [], 'must not report another account as holding the scope');
+    assert.equal(api.hasScope(BOT, 'moderator:read:followers'), false);
+
+    assert.ok(api.scopesFor(MOD).includes('moderator:read:followers'), 'the real holder still reports it');
+    assert.equal(api.findHolder('moderator:read:followers'), MOD, 'findHolder must name the actual holder');
+});
+
+test('findHolder prefers the bot only when the bot genuinely holds the scope', () => {
+    const BOT = '100';
+    const MOD = '200';
+    const provider = new RefreshingAuthProvider({ clientId: 'test-client' });
+    // Bot token has chat scopes only; the moderator holds the real one.
+    for (const [id, scope] of [
+        [BOT, ['chat:read', 'chat:edit']],
+        [MOD, ['moderator:read:followers']]
+    ]) {
+        provider.addUser(
+            id,
+            { accessToken: 'at', refreshToken: 'rt', scope, expiresIn: 3600, obtainmentTimestamp: Date.now() },
+            []
+        );
+    }
+
+    const api = new TwitchApi(provider, { knownUserIds: [BOT, MOD], apiClient: fakeApiClient() });
+    assert.equal(api.findHolder('moderator:read:followers'), MOD);
+    assert.equal(api.findHolder('chat:edit'), BOT);
+});

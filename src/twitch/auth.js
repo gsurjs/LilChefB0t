@@ -85,7 +85,9 @@ async function describeToken(raw, label) {
         scopes: info.scopes ?? [],
         // expires_in of 0 means Twitch issued a non-expiring token.
         neverExpires: info.expires_in === 0,
-        expiresIn: info.expires_in
+        expiresIn: info.expires_in,
+        // A date is actionable; a seconds count is not.
+        expiresAt: info.expires_in ? new Date(Date.now() + info.expires_in * 1000) : null
     };
 }
 
@@ -232,16 +234,21 @@ async function bootstrapFromEnv(provider, vault) {
 async function createStaticApiProvider() {
     const info = await describeToken(config.twitch.apiToken, 'static API token (TWITCH_API_TOKEN)');
 
-    const lifetime = info.neverExpires ? 'does not expire' : `expires in ${info.expiresIn}s`;
+    const days = info.neverExpires ? null : Math.floor(info.expiresIn / 86_400);
+    const lifetime = info.neverExpires
+        ? 'does not expire'
+        : `expires ${info.expiresAt.toISOString().slice(0, 10)} (${days} days)`;
     logger.info(
         `Twitch API calls run as ${info.login} via a static token (${lifetime}, scopes: ` +
             `${info.scopes.join(', ') || 'none'})`
     );
 
-    if (!info.neverExpires && info.expiresIn < 86_400) {
+    // A static token cannot renew itself, so expiry is a diary entry, not an
+    // error to recover from. Say so while there is still time to act.
+    if (days !== null && days <= 7) {
         logger.warn(
-            `That token expires in under a day (${info.expiresIn}s). Static tokens cannot renew, ` +
-                'so the bot will stop working then. Re-run `npm run auth`.'
+            `TWITCH_API_TOKEN expires in ${days} day(s) and cannot renew itself. ` +
+                'Run `npm run auth` and replace it, or the bot stops then.'
         );
     }
 
@@ -367,7 +374,9 @@ export async function createChatAuthProvider(refreshingProvider) {
         );
     }
 
-    const lifetime = info.neverExpires ? 'does not expire' : `expires in ${info.expiresIn}s`;
+    const lifetime = info.neverExpires
+        ? 'does not expire'
+        : `expires ${info.expiresAt.toISOString().slice(0, 10)}`;
     logger.info(
         `Chat will post as ${info.login} via a static token (${lifetime}, scopes: ${info.scopes.join(', ')})`
     );
