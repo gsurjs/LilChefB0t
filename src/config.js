@@ -83,6 +83,20 @@ export const config = {
         // Reply when chat says the bot's name, not just on !chefbot.
         respondToMentions: bool('AI_RESPOND_TO_MENTIONS', true),
         mentionCooldownMs: num('AI_MENTION_COOLDOWN_MS', 30_000),
+
+        /**
+         * Extra names chat uses for the bot, beyond BOT_USERNAME.
+         *
+         * Digits and separators are handled automatically, so `lilchefb0t`
+         * already covers "LilChefBot" and "lil chef bot". This is for names
+         * that are not a spelling of the username -- "chefbot" is the default
+         * because it is what the !chefbot command is called, and people drop
+         * the "!" when they are just talking to it.
+         *
+         * Keep them distinctive. A short generic alias like "chef" would fire
+         * constantly in a cooking channel.
+         */
+        aliases: list('BOT_ALIASES').length > 0 ? list('BOT_ALIASES') : ['chefbot', 'lilchef'],
         // AI-written raid/sub/cheer shoutouts (falls back to templates when off).
         eventReactions: bool('AI_EVENT_REACTIONS', true),
 

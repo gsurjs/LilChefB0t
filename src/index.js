@@ -21,6 +21,7 @@ import { adminCommands } from './commands/admin.js';
 import { AutoPoster } from './autopost.js';
 import { startHealthServer } from './health.js';
 import { pick } from './util.js';
+import { buildMentionMatcher } from './mention.js';
 
 const { version } = createRequire(import.meta.url)('../package.json');
 
@@ -34,13 +35,8 @@ function mentionAllowed(username) {
     return true;
 }
 
-/** Does this message address the bot by name? */
-function addressesBot(text) {
-    const name = config.twitch.botUsername;
-    if (!name) return false;
-    const pattern = new RegExp(`(^|\\s)@?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    return pattern.test(text) || /\blil\s?chef\b/i.test(text);
-}
+/** Does this message address the bot by name? Built once, at startup. */
+const addressesBot = buildMentionMatcher([config.twitch.botUsername, ...config.ai.aliases]);
 
 async function main() {
     const { fatal, warnings } = validateConfig();
