@@ -40,11 +40,21 @@ export class SpendLedger {
 
     #rollDay() {
         const day = today();
-        if (this.#store.data.day !== day) {
-            logger.info(`Spend ledger rolled over to ${day} (yesterday: $${(this.#store.data.usd ?? 0).toFixed(4)})`);
-            this.#store.data = { day, usd: 0, requests: 0, totals: {} };
-            this.#store.touch();
-        }
+        const data = this.#store.data;
+        if (data.day === day) return;
+
+        logger.info(`Spend ledger rolled over to ${day} (yesterday: $${(data.usd ?? 0).toFixed(4)})`);
+
+        // Mutate in place: JsonStore exposes `data` as a getter only, and the
+        // store holds the reference it will serialise. Reassigning threw, and
+        // because the throw happened before the day was updated, every later
+        // call re-entered the rollover and failed again -- which took every AI
+        // request down at UTC midnight rather than at deploy time.
+        data.day = day;
+        data.usd = 0;
+        data.requests = 0;
+        data.totals = {};
+        this.#store.touch();
     }
 
     /** True when there is still room under today's cap. */

@@ -38,6 +38,18 @@ export class JsonStore {
         return this.#data;
     }
 
+    /**
+     * Replace the whole document.
+     *
+     * Exists because a getter alone made `store.data = {...}` throw at runtime
+     * rather than at parse time -- a trap that only sprang on a code path which
+     * ran once a day. Assigning now works and marks the store dirty.
+     */
+    set data(next) {
+        this.#data = next;
+        this.touch();
+    }
+
     /** Mark dirty and schedule a flush. Cheap to call on every message. */
     touch() {
         this.#dirty = true;
